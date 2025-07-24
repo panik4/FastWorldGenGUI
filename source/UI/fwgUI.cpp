@@ -1,0 +1,1971 @@
+#include "UI/fwgUI.h"
+
+// Forward declare message handler from imgui_impl_win32.cpp
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
+                                                             UINT msg,
+                                                             WPARAM wParam,
+                                                             LPARAM lParam);
+namespace Fwg {
+// Data
+ID3D11Device *fwgUI::g_pd3dDevice = nullptr;
+ID3D11DeviceContext *fwgUI::g_pd3dDeviceContext = nullptr;
+IDXGISwapChain *fwgUI::g_pSwapChain = nullptr;
+UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
+ID3D11RenderTargetView *fwgUI::g_mainRenderTargetView = nullptr;
+int fwgUI::seed = 0;
+
+// Win32 message handler
+// You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if
+// dear imgui wants to use your inputs.
+// - When io.WantCaptureMouse is true, do not dispatch mouse input data to your
+// main application, or clear/overwrite your copy of the mouse data.
+// - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to
+// your main application, or clear/overwrite your copy of the keyboard data.
+// Generally you may always pass all inputs to dear imgui, and hide them from
+// your application based on those two flags.
+// LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+    return true;
+
+  switch (msg) {
+  case WM_SIZE:
+    if (wParam == SIZE_MINIMIZED)
+      return 0;
+    g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
+    g_ResizeHeight = (UINT)HIWORD(lParam);
+    return 0;
+  case WM_SYSCOMMAND:
+    if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
+      return 0;
+    break;
+  case WM_DESTROY:
+    ::PostQuitMessage(0);
+    return 0;
+  }
+  return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+fwgUI::fwgUI() {
+
+  uiUtils = std::make_shared<UIUtils>();
+  landUI = LandUI(uiUtils);
+}
+
+int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
+  try {
+    //  Create application window
+    //  ImGui_ImplWin32_EnableDpiAwareness();
+    WNDCLASSEXW wc = {sizeof(wc),
+                      CS_CLASSDC,
+                      WndProc,
+                      0L,
+                      0L,
+                      GetModuleHandle(nullptr),
+                      nullptr,
+                      nullptr,
+                      nullptr,
+                      nullptr,
+                      L"RandomParadox",
+                      nullptr};
+    HICON hIcon = (HICON)LoadImage(
+        NULL, (Cfg::Values().workingDirectory + "//worldMap.ico").c_str(),
+        IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+    if (hIcon) {
+      // Icon loaded successfully, set it to the window class
+      wc.hIcon = hIcon;
+    } else {
+      // Icon failed to load, handle error
+      DWORD error = GetLastError();
+      // handle error...
+    }
+
+    HWND consoleWindow = GetConsoleWindow();
+
+    SendMessage(consoleWindow, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    SendMessage(consoleWindow, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    ::RegisterClassExW(&wc);
+    HWND hwnd = uiUtils->createAndConfigureWindow(wc, wc.lpszClassName,
+                                                  L"FastWorldGen 0.9.1");
+    // Initialize Direct3D
+    if (!CreateDeviceD3D(hwnd)) {
+      CleanupDeviceD3D();
+      ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+      return 1;
+    }
+
+    // Show the window
+    ::ShowWindow(hwnd, SW_SHOWDEFAULT);
+    ::UpdateWindow(hwnd);
+
+    // Setup Dear ImGui context
+    uiUtils->setupImGuiContextAndStyle();
+    auto &io = ImGui::GetIO();
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    // ImGui::StyleColorsLight();
+
+    // Setup Platform/Renderer backends
+    uiUtils->setupImGuiBackends(hwnd, g_pd3dDevice, g_pd3dDeviceContext);
+
+    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    auto &cfg = Fwg::Cfg::Values();
+    // Main loop
+    bool done = false;
+    //--- prior to main loop:
+    DragAcceptFiles(hwnd, TRUE);
+    uiUtils->primaryTexture = nullptr;
+    uiUtils->device = g_pd3dDevice;
+    namespace fs = std::filesystem;
+
+    initAllowedInput(cfg, fwg.climateData, fwg.terrainData.elevationTypes);
+    // this->uiUtils->loadHelpTextsFromFile(Fwg::Cfg::Values().resourcePath +
+    // "uiHelpTexts.txt");
+    uiUtils->setClickOffsets(cfg.width, 1);
+    frequency = cfg.overallFrequencyModifier;
+    log = std::make_shared<std::stringstream>();
+    *log << Fwg::Utils::Logging::Logger::logInstance.getFullLog();
+    Fwg::Utils::Logging::Logger::logInstance.attachStream(log);
+    fwg.configure(cfg);
+    initAllowedInput(cfg, fwg.climateData, fwg.terrainData.elevationTypes);
+    while (!done) {
+      try {
+        // reset dragging all the time in case it wasn't handled in a tab on
+        // purpose
+        triggeredDrag = false;
+        // Poll and handle messages (inputs, window resize, etc.)
+        // See the WndProc() function below for our to dispatch events to the
+        // Win32 backend.
+        MSG msg;
+        while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+          ::TranslateMessage(&msg);
+          ::DispatchMessage(&msg);
+          if (msg.message == WM_QUIT)
+            done = true;
+          else if (msg.message == WM_DROPFILES) {
+            HDROP hDrop = reinterpret_cast<HDROP>(msg.wParam);
+
+            // extract files here
+            std::vector<std::string> files;
+            char filename[MAX_PATH];
+
+            UINT count = DragQueryFileA(hDrop, -1, NULL, 0);
+            for (UINT i = 0; i < count; ++i) {
+              if (DragQueryFileA(hDrop, i, filename, MAX_PATH)) {
+                files.push_back(filename);
+                // Fwg::Utils::Logging::logLine("Loaded file ", filename);
+              }
+            }
+            draggedFile = files.back();
+            triggeredDrag = true;
+            DragFinish(hDrop);
+          }
+        }
+        if (done)
+          break;
+
+        // Handle window resize (we don't resize directly in the WM_SIZE
+        // handler)
+        if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
+          CleanupRenderTarget();
+          g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight,
+                                      DXGI_FORMAT_UNKNOWN, 0);
+          g_ResizeWidth = g_ResizeHeight = 0;
+          CreateRenderTarget();
+        }
+
+        // Start the Dear ImGui frame
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+        {
+          ImGui::SetNextWindowPos({0, 0});
+          ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y});
+          ImGui::Begin("FastWorldGen");
+          // observer checks for "Error"
+
+
+
+          ImGui::BeginChild("LeftContent",
+                            ImVec2(ImGui::GetContentRegionAvail().x * 0.4f,
+                                   ImGui::GetContentRegionAvail().y * 1.0f),
+                            false);
+          {
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(78, 90, 204, 40));
+            // Create a child window for the left content
+            ImGui::BeginChild("SettingsContent",
+                              ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
+                                     ImGui::GetContentRegionAvail().y * 0.8f),
+                              false);
+            {
+              ImGui::SeparatorText(
+                  "Different Steps of the generation, usually go "
+                  "from left to right");
+
+              if (ImGui::BeginTabBar("Steps", ImGuiTabBarFlags_None)) {
+                // Disable all inputs if computation is running
+                if (computationRunning) {
+                  ImGui::BeginDisabled();
+                }
+
+                showElevationTabs(cfg, fwg);
+                showClimateInputTab(cfg, fwg);
+                showClimateOverview(cfg, fwg);
+                showAreasTab(cfg, fwg);
+                showCivilizationTab(cfg, fwg);
+                // Re-enable inputs if computation is running
+                if (computationRunning && !computationStarted) {
+                  ImGui::EndDisabled();
+                }
+                // Check if the computation is done
+                if (computationRunning &&
+                    computationFutureBool.wait_for(std::chrono::seconds(0)) ==
+                        std::future_status::ready) {
+                  computationRunning = false;
+                  uiUtils->resetTexture();
+                }
+
+                if (computationRunning) {
+                  computationStarted = false;
+                  ImGui::Text("Working, please be patient");
+                  static auto lastTime = std::chrono::steady_clock::now();
+
+                  auto currentTime = std::chrono::steady_clock::now();
+                  auto elapsedTime =
+                      std::chrono::duration_cast<std::chrono::seconds>(
+                          currentTime - lastTime)
+                          .count();
+
+                  // TODO: Image updates?
+                } else {
+                  ImGui::Text("Ready!");
+                }
+
+                ImGui::EndTabBar();
+              }
+
+              ImGui::PopStyleColor();
+              ImGui::EndChild();
+              // Draw a frame around the child region
+              ImVec2 childMin = ImGui::GetItemRectMin();
+              ImVec2 childMax = ImGui::GetItemRectMax();
+              ImGui::GetWindowDrawList()->AddRect(childMin, childMax,
+                                                  IM_COL32(100, 90, 180, 255),
+                                                  0.0f, 0, 2.0f);
+            }
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
+            {
+              ImGui::PushStyleColor(ImGuiCol_ChildBg,
+                                    IM_COL32(30, 100, 144, 40));
+
+              ImGui::BeginChild(
+                  "GenericWrapper",
+                  ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
+                         std::max<float>(
+                             ImGui::GetContentRegionAvail().y * 0.3f, 100.0f)),
+                  false, window_flags);
+
+              ImGui::EndChild();
+              // Draw a frame around the child region
+              ImVec2 childMin = ImGui::GetItemRectMin();
+              ImVec2 childMax = ImGui::GetItemRectMax();
+              ImGui::GetWindowDrawList()->AddRect(childMin, childMax,
+                                                  IM_COL32(50, 91, 120, 255),
+                                                  0.0f, 0, 2.0f);
+              ImGui::PopStyleColor();
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
+            ImGui::BeginChild("Log",
+                              ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
+                                     ImGui::GetContentRegionAvail().y * 1.0f),
+                              false, window_flags);
+            {
+              ImGui::TextUnformatted(log->str().c_str());
+              if (!ImGui::IsWindowHovered()) {
+                // scroll to bottom
+                ImGui::SetScrollHereY(1.0f);
+              }
+              ImGui::EndChild();
+              ImGui::PopStyleColor();
+              // Draw a frame around the child region
+              ImVec2 childMin = ImGui::GetItemRectMin();
+              ImVec2 childMax = ImGui::GetItemRectMax();
+              ImGui::GetWindowDrawList()->AddRect(childMin, childMax,
+                                                  IM_COL32(25, 91, 133, 255),
+                                                  0.0f, 0, 2.0f);
+            }
+            ImGui::EndChild();
+            // Draw a frame around the child region
+            ImVec2 childMin = ImGui::GetItemRectMin();
+            ImVec2 childMax = ImGui::GetItemRectMax();
+            ImGui::GetWindowDrawList()->AddRect(
+                childMin, childMax, IM_COL32(64, 69, 112, 255), 0.0f, 0, 2.0f);
+          }
+          ImGui::SameLine();
+
+          static ImVec2 cursorPos;
+
+          float modif = 1.0 - (uiUtils->secondaryTexture != nullptr) * 0.5;
+          if (uiUtils->textureWidth > 0 && uiUtils->textureHeight > 0) {
+            float aspectRatio =
+                (float)uiUtils->textureWidth / (float)uiUtils->textureHeight;
+            auto scale = std::min<float>((ImGui::GetContentRegionAvail().y) *
+                                             modif / uiUtils->textureHeight,
+                                         (ImGui::GetContentRegionAvail().x) /
+                                             uiUtils->textureWidth);
+            auto texWidth = uiUtils->textureWidth * scale;
+            auto texHeight = uiUtils->textureHeight * scale;
+
+            // Handle zooming
+            if (io.KeyCtrl) {
+              zoom += io.MouseWheel * 0.1f;
+            }
+
+            // Create a child window for the image
+            ImGui::BeginChild("ImageContainer", ImVec2(0, 0), false,
+                              ImGuiWindowFlags_HorizontalScrollbar |
+                                  ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            {
+              ImGui::BeginChild("Image", ImVec2(texWidth, texHeight), false,
+                                ImGuiWindowFlags_HorizontalScrollbar |
+                                    ImGuiWindowFlags_AlwaysVerticalScrollbar);
+              if (uiUtils->primaryTexture != nullptr) {
+                ImGui::Image(
+                    (void *)uiUtils->primaryTexture,
+                    ImVec2(texWidth * zoom * 0.98, texHeight * zoom * 0.98));
+                if (io.KeyCtrl && io.MouseWheel) {
+                  // Get the mouse position relative to the image
+                  ImVec2 mouse_pos = ImGui::GetMousePos();
+                  ImVec2 image_pos = ImGui::GetItemRectMin();
+                  auto itemsize = ImGui::GetItemRectSize();
+                  ImVec2 mouse_pos_relative = ImVec2(mouse_pos.x - image_pos.x,
+                                                     mouse_pos.y - image_pos.y);
+                  // Calculate the pixel position in the texture
+                  float pixel_x = ((mouse_pos_relative.x / itemsize.x));
+                  float pixel_y = ((mouse_pos_relative.y / itemsize.y));
+                  ImGui::SetScrollHereY(std::clamp(pixel_y, 0.0f, 1.0f));
+                  ImGui::SetScrollHereX(std::clamp(pixel_x, 0.0f, 1.0f));
+                }
+
+                // Handle dragging
+                if (io.KeyCtrl && ImGui::IsMouseDragging(0, 0.0f)) {
+                  ImVec2 drag_delta = ImGui::GetMouseDragDelta(0, 0.0f);
+                  ImGui::ResetMouseDragDelta(0);
+                  ImGui::SetScrollX(ImGui::GetScrollX() - drag_delta.x);
+                  ImGui::SetScrollY(ImGui::GetScrollY() - drag_delta.y);
+                }
+                if (!io.KeyCtrl) {
+                  uiUtils->imageClick(scale, io);
+                }
+              }
+              // End the child window
+              ImGui::EndChild();
+
+              ImGui::BeginChild("ImageSecondary", ImVec2(texWidth, texHeight),
+                                false,
+                                ImGuiWindowFlags_HorizontalScrollbar |
+                                    ImGuiWindowFlags_AlwaysVerticalScrollbar);
+              // images are less wide, on a usual 16x9 monitor, it is better
+              // to place them besides each other if (aspectRatio <= 2.0)
+              //  ImGui::SameLine();
+              if (uiUtils->secondaryTexture != nullptr) {
+                ImGui::Image((void *)uiUtils->secondaryTexture,
+                             ImVec2(uiUtils->textureWidth * scale * 0.98,
+                                    uiUtils->textureHeight * scale * 0.98));
+              }
+              ImGui::EndChild();
+            }
+            ImGui::EndChild();
+          }
+          ImGui::End();
+        }
+
+        // Rendering
+        uiUtils->renderImGui(g_pd3dDeviceContext, g_mainRenderTargetView,
+                             clear_color, g_pSwapChain);
+      } catch (std::exception e) {
+        Fwg::Utils::Logging::logLine("Error in GUI main loop: ", e.what());
+      }
+    }
+
+    // Cleanup
+    uiUtils->shutdownImGui();
+
+    CleanupDeviceD3D();
+    ::DestroyWindow(hwnd);
+    ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    return 0;
+  } catch (std::exception e) {
+    Fwg::Utils::Logging::logLine("Error in GUI startup: ", e.what());
+    return -1;
+  }
+}
+
+void fwgUI::disableBlock(const Fwg::Gfx::Bitmap &bitmap) {
+  if (!bitmap.initialised())
+    ImGui::BeginDisabled();
+}
+void fwgUI::reenableBlock(const Fwg::Gfx::Bitmap &bitmap) {
+  if (!bitmap.initialised())
+    ImGui::EndDisabled();
+}
+void fwgUI::initAllowedInput(
+    Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
+    std::vector<Terrain::ElevationType> &elevationTypes) {
+  Fwg::Utils::Logging::logLine("Initialising allowed input");
+  auto &climateTypes = climateData.climateTypes;
+  climateUI.allowedClimateInputs.clear();
+  for (const auto &climateType : climateTypes) {
+    climateUI.allowedClimateInputs.setValue(climateType.primaryColour,
+                                            climateType);
+  }
+
+  for (const auto &elevationType : elevationTypes) {
+    landUI.allowedLandInputs.setValue(elevationType.colour, elevationType);
+  }
+};
+
+int fwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
+  if (ImGui::BeginTabItem("Fwg config")) {
+    // remove the images, and set pretext for them to be auto loaded after
+    // switching tabs again
+    uiUtils->tabSwitchEvent();
+    ImGui::PushItemWidth(200.0f);
+    ImGui::InputInt("Width", &cfg.width);
+    ImGui::InputInt("Height", &cfg.height);
+    ImGui::PopItemWidth();
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+// display cut configuration options
+int fwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  ImGui::PushItemWidth(200.0f);
+  ImGui::Checkbox("Cut from input", &cfg.cut);
+  if (cfg.cut) {
+    ImGui::SameLine();
+    ImGui::InputInt("MinX", &cfg.minX, 1, 64);
+    ImGui::SameLine();
+    ImGui::InputInt("MinY", &cfg.minY, 1, 64);
+    ImGui::SameLine();
+    ImGui::InputInt("MaxX", &cfg.maxX, 1, 64);
+    ImGui::SameLine();
+    ImGui::InputInt("MaxY", &cfg.maxY, 1, 64);
+    ImGui::Checkbox("Scale", &cfg.scale);
+    ImGui::SameLine();
+    ImGui::InputInt("ScaleX", &cfg.scaleX, 64, 256);
+    ImGui::SameLine();
+    ImGui::InputInt("ScaleY", &cfg.scaleY, 64, 256);
+    ImGui::SameLine();
+    ImGui::Checkbox("Keep Ratio", &cfg.keepRatio);
+  }
+  ImGui::PopItemWidth();
+  return 0;
+}
+int fwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
+  ImGui::BeginChild("Log",
+                    ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
+                           ImGui::GetContentRegionAvail().y * 0.1),
+                    false, window_flags);
+  ImGui::TextUnformatted(log->str().c_str());
+  bool success = true;
+  if (!ImGui::IsWindowHovered()) {
+    // scroll to bottom
+    ImGui::SetScrollHereY(1.0f);
+  }
+  ImGui::EndChild();
+  ImGui::PushItemWidth(200.0f);
+  uiUtils->brushSettingsHeader();
+  if (ImGui::InputInt("<--Seed", &cfg.seed)) {
+    cfg.randomSeed = false;
+    cfg.reRandomize();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Get random seed")) {
+    cfg.randomSeed = true;
+    cfg.reRandomize();
+  }
+  ImGui::SameLine();
+  if (cfg.debugLevel > 5 && ImGui::Button("Display size")) {
+    Fwg::Utils::Logging::logLine(fwg.size());
+  }
+  ImGui::SameLine();
+  if (cfg.debugLevel > 5 && ImGui::Button("Clear")) {
+    fwg.resetData();
+    Fwg::Utils::Logging::logLine(fwg.size());
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(("Save current image to " + cfg.mapsPath).c_str())) {
+    writeCurrentlyDisplayedImage(cfg);
+  }
+  ImGui::SameLine();
+  ImGui::InputInt("<--Debug level", &cfg.debugLevel);
+  if (ImGui::Button("Generate all world data")) {
+    fwg.resetData();
+    // reset this because now we randomly generate all data, so heightmap
+    // modifications MUST be allowed again
+    cfg.allowHeightmapModification = true;
+
+    // run the generation async
+    computationFutureBool =
+        runAsyncInitialDisable(&Fwg::FastWorldGenerator::generateWorld, fwg);
+  }
+  ImGui::PopItemWidth();
+  return success;
+}
+
+int fwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+
+  if (ImGui::BeginTabItem("Land Tabs")) {
+    uiUtils->tabSwitchEvent();
+    if (ImGui::BeginTabBar("Land Tabs", ImGuiTabBarFlags_None)) {
+      showLandTab(cfg, fwg);
+      showHeightmapTab(cfg, fwg);
+      showNormalMapTab(cfg, fwg);
+      ImGui::EndTabBar();
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+static bool analyze = false;
+static int amountClassificationsNeeded = 0;
+int fwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Land Input")) {
+    uiUtils->showHelpTextBox("Land");
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, landUI.landInput);
+    }
+
+    if (ImGui::Checkbox("<--Classify land input", &cfg.complexLandInput)) {
+      if (cfg.complexLandInput) {
+        cfg.readHeightmapConfig(cfg.workingDirectory +
+                                "//configs//heightmap//" + "mappedInput.json");
+      } else {
+        cfg.readHeightmapConfig(cfg.workingDirectory +
+                                "//configs//heightmap//" + "default.json");
+      }
+    }
+    if (cfg.complexLandInput && landUI.landInput.size()) {
+      landUI.complexLandMapping(cfg, fwg, analyze, amountClassificationsNeeded);
+    }
+    // drag event
+    if (triggeredDrag) {
+      cfg.allowHeightmapModification = true;
+      originalLandInput = draggedFile;
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        landUI.triggeredLandInput(cfg, fwg, originalLandInput,
+                                  cfg.complexLandInput);
+        uiUtils->updateImage(0, landUI.landInput);
+        // after the first drag, we have saved the original input to this new
+        // file now we always want to reload it from here to get the progressive
+        // changes, never overwriting the original
+        originalLandInput = cfg.mapsPath + "//classifiedLandInput.bmp";
+        // in case of complex input and a drag, we NEED to initially analyze
+        if (cfg.complexLandInput) {
+          analyze = true;
+        }
+        triggeredDrag = false;
+        return true;
+      });
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  static bool updateLayer = false;
+  static int selectedLayer = 0;
+  if (ImGui::BeginTabItem("Heightmap")) {
+    if (uiUtils->tabSwitchEvent()) {
+      if (fwg.terrainData.detailedHeightMap.size()) {
+        uiUtils->updateImage(0, Fwg::Gfx::simpleLandMap(fwg.terrainData));
+        // wrap around because we want to show two images
+        if (updateLayer) {
+          if (selectedLayer < fwg.layerData.size() &&
+              fwg.layerData[selectedLayer].size() &&
+              fwg.terrainData.detailedHeightMap.size()) {
+            uiUtils->updateImage(
+                1, Fwg::Gfx::Bitmap(cfg.width, cfg.height, 24,
+                                    fwg.layerData[selectedLayer]));
+          }
+          updateLayer = false;
+        } else {
+          uiUtils->updateImage(1, Fwg::Gfx::landMap(fwg.terrainData));
+        }
+      }
+    }
+    static bool layeredit = false;
+    uiUtils->showHelpTextBox("Heightmap");
+    showCutCfg(cfg, fwg);
+    ImGui::PushItemWidth(100.0f);
+    ImGui::SeparatorText(
+        "Generate a simple overview of land area from heightmap "
+        "or drop it in");
+    ImGui::Text("Sealevel: %d", cfg.seaLevel);
+    if (!cfg.complexLandInput) {
+      ImGui::InputInt("<--SeaLevel", &cfg.seaLevel, 1, 10);
+      ImGui::SliderFloat("<--Landpercentage", &cfg.landPercentage, 0.00, 1.0);
+      ImGui::InputInt("<--Height Adjustments", &cfg.heightAdjustments);
+      ImGui::InputFloat("<--Landlayer coastal distance factor",
+                        &cfg.layerApplicationFactor, 0.1f, 0.1f);
+    } else {
+      ImGui::Text("Sealevel: %d", cfg.seaLevel);
+      ImGui::Text("Landpercentage: %f", cfg.landPercentage);
+    }
+    // ImGui::InputDouble("<--Inclination factor", &cfg.inclinationFactor,
+    // 0.1f);
+    ImGui::InputDouble("<--Maximum Lake Size Factor", &cfg.lakeMaxShare, 0.01f);
+    if (ImGui::InputInt("<--Maximum Land height", &cfg.maxLandHeight)) {
+      cfg.maxLandHeight = std::max<int>(cfg.maxLandHeight, cfg.seaLevel);
+    }
+    ImGui::PopItemWidth();
+    ImGui::PushItemWidth(100.0f);
+    ImGui::SameLine();
+    if (ImGui::SliderFloat("<--Overall Frequency", &frequency, 0.1f, 10.0f,
+                           "ratio = %.1f")) {
+    } else {
+      if (!ImGui::IsMouseDown(0) &&
+          frequency != (float)cfg.overallFrequencyModifier) {
+        cfg.overallFrequencyModifier = frequency;
+        update = true;
+      }
+    }
+    ImGui::Checkbox("<--Layer edit", &layeredit);
+    if (layeredit) {
+      ImGui::SeparatorText(
+          "Edit the settings of the selected layer. On the left is the "
+          "finished "
+          "heightmap, on the right is the currently selected layer");
+      ImGui::SliderInt("<--Layers used for generation", &cfg.layerAmount, 1,
+                       cfg.maxLayerAmount);
+      {
+        ImGui::BeginChild("LayerSelection",
+                          ImVec2(ImGui::GetContentRegionAvail().x * 0.2f,
+                                 ImGui::GetContentRegionAvail().y * 0.8f),
+                          false);
+        // TODO: ugly
+        std::vector<std::string> stringRepr;
+        stringRepr.resize(cfg.layerAmount);
+        std::vector<const char *> cStrRepr;
+        cStrRepr.resize(cfg.layerAmount);
+        for (int i = 0; i < cfg.layerAmount; i++) {
+          stringRepr[i] = std::to_string(i);
+          cStrRepr[i] = stringRepr[i].c_str();
+        }
+        ImGui::Text("Select Layer");
+        if (ImGui::ListBox("", &selectedLayer, cStrRepr.data(), cStrRepr.size(),
+                           12)) {
+          updateLayer = true;
+          uiUtils->resetTexture(1);
+        }
+        ImGui::EndChild();
+      }
+      ImGui::SameLine();
+      {
+        ImGui::BeginChild("LayerEdit",
+                          ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
+                                 ImGui::GetContentRegionAvail().y * 0.8f),
+                          false);
+        ImGui::PushItemWidth(100.0f);
+        bool landLayer = cfg.landLayer[selectedLayer];
+        ImGui::Checkbox("<--LandLayer", &landLayer);
+        cfg.landLayer[selectedLayer] = landLayer;
+        bool seaLayer = cfg.seaLayer[selectedLayer];
+        ImGui::SameLine();
+        ImGui::Checkbox("<--SeaLayer", &seaLayer);
+        cfg.seaLayer[selectedLayer] = seaLayer;
+        ImGui::InputInt("<--Noise Type", &cfg.noiseType[selectedLayer]);
+        ImGui::InputInt("<--Fractal Type", &cfg.fractalType[selectedLayer]);
+        ImGui::InputFloat("<--FractalFrequency",
+                          &cfg.fractalFrequency[selectedLayer], 0.1);
+        ImGui::InputInt("<--fractalOctaves", &cfg.fractalOctaves[selectedLayer],
+                        1);
+        ImGui::InputFloat("<--fractalGain", &cfg.fractalGain[selectedLayer],
+                          0.05);
+        ImGui::InputDouble("<--Weight", &cfg.weight[selectedLayer], 0.05);
+        int tempInt = std::get<0>(cfg.heightRange[selectedLayer]);
+        ImGui::InputInt("<--minHeight", &tempInt, 5);
+        std::get<0>(cfg.heightRange[selectedLayer]) =
+            static_cast<unsigned char>(tempInt);
+        int tempInt2 = std::get<1>(cfg.heightRange[selectedLayer]);
+        ImGui::InputInt("<--maxHeight", &tempInt2, 5);
+        std::get<1>(cfg.heightRange[selectedLayer]) =
+            static_cast<unsigned char>(tempInt2);
+        ImGui::InputDouble("<--Tanfactor", &cfg.tanFactor[selectedLayer], 0.01);
+        ImGui::InputDouble("<--widthEdge", &cfg.widthEdge[selectedLayer], 1);
+        ImGui::InputDouble("<--heightEdge", &cfg.heightEdge[selectedLayer], 1);
+        ImGui::InputDouble("<--Edge limit factor", &cfg.edgeLimitFactor, 0.1);
+        ImGui::PopItemWidth();
+        ImGui::EndChild();
+      }
+    }
+    ImGui::SeparatorText("Generate using buttons or drop in file");
+    std::string buttonText = cfg.cut ? "<--Cut from" : "Generate";
+    buttonText.append(" heightmap");
+    if (!cfg.complexLandInput && ImGui::Button(buttonText.c_str())) {
+      // we have dragged in a terrain map before, if we generate, we just want
+      // to generate with changed parameters
+      // This case is only used in case of simple input
+      if (landUI.loadedTerrainFile.size()) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genHeightFromInput(cfg, this->landUI.loadedTerrainFile);
+          fwg.genLand();
+          uiUtils->resetTexture();
+          updateLayer = true;
+          return true;
+        });
+      } else {
+        computationFutureBool = runAsync([&fwg, this]() {
+          fwg.genHeight();
+          uiUtils->resetTexture();
+          updateLayer = true;
+          return true;
+        });
+        updateLayer = true;
+      }
+    }
+
+    ImGui::PopItemWidth();
+    landUI.configureLandElevationFactors(cfg, fwg);
+
+    ImGui::PushItemWidth(300.0f);
+    // only allow this if classification has been done
+    if (amountClassificationsNeeded > 0 || analyze) {
+      ImGui::BeginDisabled();
+    }
+    const auto str = cfg.complexLandInput
+                         ? "Generate heightmap from land classification"
+                         : "Generate land classification from heightmap";
+    if (ImGui::Button(str)) {
+      if (cfg.complexLandInput) {
+        fwg.genHeightFromInput(cfg, cfg.mapsPath + "//classifiedLandInput.bmp");
+        uiUtils->updateImage(
+            0, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
+        uiUtils->updateImage(1, Fwg::Gfx::landMap(fwg.terrainData));
+      }
+      computationFutureBool = runAsync([&fwg, this]() {
+        fwg.genLand();
+        updateLayer = true;
+        uiUtils->resetTexture();
+        return true;
+      });
+    }
+    if (ImGui::Button("Generate everything from heightmap")) {
+      // run the generation async
+      computationFutureBool = runAsync([&fwg, this]() {
+        worldGenerationView = true;
+        fwg.generateRemaining();
+        worldGenerationView = false;
+        return true;
+      });
+    }
+    if (amountClassificationsNeeded > 0 || analyze) {
+      ImGui::EndDisabled();
+    }
+    ImGui::PopItemWidth();
+    // drag event
+    if (triggeredDrag) {
+      triggeredDrag = false;
+      cfg.allowHeightmapModification = false;
+      fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(draggedFile, cfg));
+      uiUtils->resetTexture();
+    }
+
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+void fwgUI::clearColours(Fwg::Gfx::Bitmap &image) {
+  static int severity = 0;
+  // first count every colour in a colourTMap
+  Utils::ColourTMap<std::vector<int>> colourCounter;
+  for (int pix = 0; pix < image.size(); pix++) {
+    const auto &col = image[pix];
+    if (!colourCounter.find(col)) {
+      colourCounter.setValue(col, {});
+      colourCounter[col].push_back(pix);
+    } else {
+      colourCounter[col].push_back(pix);
+    }
+  }
+  std::vector<Fwg::Gfx::Colour> colorsSortedByDistance;
+
+  for (auto &elem : colourCounter.getMap()) {
+    auto &col = elem.first;
+    if (elem.second.size() <
+        image.size() / std::clamp((100 - severity), 1, 100)) {
+      for (auto &elem2 : colourCounter.getMap()) {
+        if (elem2.second.size() &&
+            col.distance(elem2.first) < (10 + severity)) {
+          elem.second.insert(elem.second.end(), elem2.second.begin(),
+                             elem2.second.end());
+
+          for (auto pix : elem2.second) {
+            image.setColourAtIndex(pix, col);
+          }
+          elem2.second.clear();
+        }
+      }
+    }
+  }
+  severity++;
+  // std::sort(colorsSortedByDistance.begin(), colorsSortedByDistance.end(),
+  //           [](const Fwg::Gfx::Colour a, const Fwg::Gfx::Colourb) {
+  //             return (a.dis < *b);
+  //           }););
+}
+
+int fwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Normalmap")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(
+          0, Fwg::Gfx::displaySobelMap(fwg.terrainData.sobelData));
+      uiUtils->updateImage(
+          1, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
+    }
+    uiUtils->showHelpTextBox("Normalmap");
+    ImGui::SeparatorText("Generate a NormalMap.");
+
+    ImGui::PushItemWidth(200.0f);
+    ImGui::InputInt("Sobelfactor", &cfg.sobelFactor);
+    ImGui::PopItemWidth();
+    if (fwg.terrainData.detailedHeightMap.size()) {
+      if (ImGui::Button("Generate Normalmap")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genSobelMap(cfg);
+          uiUtils->resetTexture(0);
+          return true;
+        });
+      }
+    } else {
+      ImGui::Text("Have a heightmap first before you can generate it from the "
+                  "heightmap");
+    }
+    // drag event
+    if (triggeredDrag) {
+      triggeredDrag = false;
+      auto heightMap = IO::Reader::readHeightmapImage(draggedFile, cfg);
+      fwg.loadHeight(cfg, heightMap);
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genSobelMap(cfg);
+        uiUtils->resetTexture();
+        return true;
+      });
+    }
+
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Climate Generation")) {
+    uiUtils->showHelpTextBox("Climate");
+
+    ImGui::PushItemWidth(200.0f);
+    // evaluate multiple inputs at once so short-circuit evaluation doesn't
+    // trigger flickering
+    if (longCircuitLogicalOr(
+            ImGui::InputDouble("<--Base temperature", &cfg.baseTemperature,
+                               0.1),
+            ImGui::InputDouble("<--Base humidity", &cfg.baseHumidity, 0.1),
+            ImGui::InputDouble("<--Fantasy climate frequency modifier",
+                               &cfg.fantasyClimateFrequency, 0.1),
+            ImGui::Checkbox("<--Fantasy climate", &cfg.fantasyClimate))
+
+    ) {
+      redoHumidity = true;
+    }
+    if (longCircuitLogicalOr(
+            ImGui::InputDouble("<--Latitude high", &cfg.latHigh, 0.1),
+            ImGui::InputDouble("<--Latitude low", &cfg.latLow, 0.1),
+            ImGui::InputDouble("<--River amount multiplier", &cfg.riverFactor,
+                               0.1),
+            ImGui::InputDouble("<--River humidity multiplier",
+                               &cfg.riverHumidityFactor, 0.1),
+            ImGui::InputDouble("<--River effect range multiplier",
+                               &cfg.riverEffectRangeFactor, 0.1))) {
+      redoHumidity = true;
+    }
+    if (fwg.terrainData.landForms.size() > 0 &&
+        fwg.terrainData.landForms.size() ==
+            fwg.terrainData.detailedHeightMap.size() &&
+        ImGui::Button("Generate whole climate automatically")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genTemperatures(cfg);
+        fwg.genHumidity(cfg);
+        fwg.genRivers(cfg);
+        fwg.genClimate(cfg);
+        fwg.genWorldMap(cfg);
+        // force update so sub-selected tabs get updated
+        uiUtils->setForceUpdate();
+        uiUtils->resetTexture();
+        return true;
+      });
+    }
+    ImGui::PopItemWidth();
+    if (!fwg.terrainData.landForms.size()) {
+
+      ImGui::Text(
+          "Have a heightmap, land classification, normalmap and continent map "
+          "first");
+      ImGui::BeginDisabled();
+    }
+    if (ImGui::BeginTabBar("Climate Generation")) {
+      showTemperatureMap(cfg, fwg);
+      showHumidityTab(cfg, fwg);
+      showRiverTab(cfg, fwg);
+      showClimateTab(cfg, fwg);
+      showTreeTab(cfg, fwg);
+      ImGui::EndTabBar();
+    }
+
+    if (!fwg.terrainData.landForms.size()) {
+      ImGui::EndDisabled();
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+
+  if (ImGui::BeginTabItem("Climate Input")) {
+    static bool analyze = false;
+    static int amountClassificationsNeeded = 0;
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, climateUI.climateInputMap);
+    }
+    ImGui::SeparatorText("This step is OPTIONAL! You can also generate a "
+                         "random climate in the next tab");
+    uiUtils->showHelpTextBox("Climate Input");
+    if (triggeredDrag) {
+      // don't immediately generate from the input, instead allow to manually
+      // classify all present colours
+      climateUI.climateInputMap =
+          Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
+      // create a map from secondary colours to primary colours
+      Fwg::Utils::ColourTMap<Fwg::Climate::ClimateType> secondaryToPrimary;
+      for (auto &type : fwg.climateData.climateTypes) {
+        for (auto &secondary : type.secondaryColours) {
+          secondaryToPrimary.setValue(secondary, type);
+        }
+      }
+
+      // preprocess input to convert to primary colours where possible
+      for (auto &col : climateUI.climateInputMap.imageData) {
+        if (secondaryToPrimary.find(col)) {
+          col = secondaryToPrimary[col].primaryColour;
+        }
+      }
+
+      if (climateUI.climateInputMap.size() !=
+          fwg.terrainData.detailedHeightMap.size()) {
+        Utils::Logging::logLine("Climate input map size does not match height "
+                                "map size. Please ensure that the input map is "
+                                "the same size as the height map");
+        climateUI.climateInputMap.clear();
+      } else {
+        analyze = true;
+      }
+      triggeredDrag = false;
+    }
+    if (climateUI.climateInputMap.initialised()) {
+      climateUI.complexTerrainMapping(cfg, fwg, analyze,
+                                      amountClassificationsNeeded);
+      uiUtils->resetTexture();
+    }
+    // only allow this if classification has been done
+    if (amountClassificationsNeeded > 0 || analyze) {
+      ImGui::BeginDisabled();
+    }
+    if (!amountClassificationsNeeded && climateUI.climateInputMap.size() &&
+        ImGui::Button("Generate from labeled climate")) {
+      cfg.complexClimateInput = true;
+      Fwg::Gfx::Bmp::save(climateUI.climateInputMap,
+                          cfg.mapsPath + "//classifiedClimateInput.bmp");
+      fwg.loadClimate(cfg, climateUI.climateInputMap);
+      uiUtils->resetTexture();
+    }
+    if (amountClassificationsNeeded > 0 || analyze) {
+      ImGui::EndDisabled();
+    }
+
+    ImGui::EndTabItem();
+  }
+  return 0;
+};
+
+int fwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Temperature")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(
+          0, Fwg::Gfx::Climate::displayTemperature(fwg.climateData));
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+    }
+    uiUtils->showHelpTextBox("Temperature");
+
+    ImGui::SeparatorText("Generate temperature map or drop it in. You can also "
+                         "draw in this map");
+    if (ImGui::Button("Generate Temperature Map")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genTemperatures(cfg);
+        uiUtils->resetTexture();
+        return true;
+      });
+    }
+    // drag event
+    if (triggeredDrag) {
+      fwg.loadTemperatures(cfg, draggedFile);
+      triggeredDrag = false;
+      uiUtils->resetTexture();
+    }
+    // if (uiUtils->simpleDraw(fwg.terrainData.landMap,
+    //                         fwg.climateData.averageTemperatures, 1.0f)) {
+    //   displayImage = Fwg::Gfx::Climate::displayTemperature(fwg.climateData);
+    // }
+
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+int fwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Humidity")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0,
+                           Fwg::Gfx::Climate::displayHumidity(fwg.climateData));
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+    }
+    uiUtils->showHelpTextBox("Humidity");
+    ImGui::SeparatorText(
+        "Generate humidity map or drop it in. You can also draw in this map");
+    if (ImGui::Button("Generate Humidity Map")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genHumidity(cfg);
+        uiUtils->resetTexture(0);
+        return true;
+      });
+    }
+    // drag event
+    if (triggeredDrag) {
+      fwg.loadHumidity(cfg,
+                       Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+      redoHumidity = false;
+      triggeredDrag = false;
+      uiUtils->resetTexture();
+    }
+    // if (uiUtils->simpleDraw(fwg.terrainData.landMap,
+    // fwg.climateData.humidities,
+    //                         1.0f)) {
+    //   displayImage = Gfx::Climate::displayHumidity(fwg.climateData);
+    //   // overwrite to be able to reset after applying river humidity
+    //   fwg.preModifyHumidityMap = fwg.climateData.humidities;
+    // }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Rivers")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, Gfx::riverMap(fwg.terrainData.detailedHeightMap,
+                                            fwg.climateData.rivers));
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+    }
+    uiUtils->showHelpTextBox("Rivers");
+    if (!fwg.climateData.humidities.size()) {
+      ImGui::BeginDisabled();
+    }
+    ImGui::InputDouble("River amount multiplier", &cfg.riverFactor);
+    if (ImGui::Button("Generate River Map")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genRivers(cfg);
+        return true;
+      });
+      uiUtils->resetTexture();
+    }
+
+    // drag event
+    if (triggeredDrag) {
+      fwg.loadRivers(cfg, Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+      uiUtils->resetTexture();
+      triggeredDrag = false;
+    }
+
+    ImGui::Value("Amount of rivers: ", (int)fwg.climateData.rivers.size());
+    if (!fwg.climateData.humidities.size())
+      ImGui::EndDisabled();
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Climate")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(
+          0, Fwg::Gfx::Climate::displayClimate(fwg.climateData, false));
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+
+    uiUtils->showHelpTextBox("Climate Gen");
+
+    ImGui::SeparatorText("Generate climate map or drop it in");
+    if (!fwg.climateData.humidities.size())
+      ImGui::BeginDisabled();
+    if (ImGui::Button("Generate")) {
+      computationFutureBool =
+          runAsync([&fwg, &cfg, this]() { // noticed a change of humidity
+                                          // parameters, so we redo the humidity
+            // generation before generating climate map
+            if (redoHumidity) {
+              fwg.genTemperatures(cfg);
+              fwg.genHumidity(cfg);
+              redoHumidity = false;
+            }
+            fwg.genClimate(cfg);
+            uiUtils->resetTexture();
+            return true;
+          });
+    }
+    if (!fwg.climateData.humidities.size())
+      ImGui::EndDisabled();
+    // drag event
+    if (triggeredDrag) {
+      // only try to load climate if the complexTerrain is initialized
+      if (climateUI.climateInputMap.initialised()) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.loadClimate(cfg, climateUI.climateInputMap);
+          fwg.genWorldMap(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
+      } else {
+        int amountClassificationsNeeded;
+        auto climateInput = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
+        // load a valid map if no classificationsNeeded
+        if (climateUI.analyzeClimateMap(cfg, fwg, climateInput,
+                                        amountClassificationsNeeded)) {
+          fwg.loadClimate(cfg, climateInput);
+          uiUtils->resetTexture();
+        } else {
+          Utils::Logging::logLine(
+              "You are trying to load a climate input that has incompatible "
+              "colours. If you want to use a complex climate map as input, "
+              "please use the Climate Input tab label the climate zones. The "
+              "resulting map will be used as "
+              "climate input here automatically.");
+        }
+      }
+      triggeredDrag = false;
+      uiUtils->resetTexture();
+    }
+
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Trees")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(
+          0, Fwg::Gfx::Climate::displayClimate(fwg.climateData, true));
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+    uiUtils->showHelpTextBox("Trees");
+
+    ImGui::PushItemWidth(200.0f);
+    ImGui::InputDouble("borealDensity", &cfg.borealDensity, 0.1);
+    ImGui::InputDouble("temperateNeedleDensity", &cfg.temperateNeedleDensity,
+                       0.1);
+    ImGui::InputDouble("temperateMixedDensity", &cfg.temperateMixedDensity,
+                       0.1);
+    ImGui::InputDouble("sparseDensity", &cfg.sparseDensity, 0.1);
+    ImGui::InputDouble("tropicalDryDensity", &cfg.tropicalDryDensity, 0.1);
+    ImGui::InputDouble("tropicalMoistDensity", &cfg.tropicalMoistDensity, 0.1);
+
+    if (ImGui::Button("Generate Treemap")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genForests(cfg);
+        uiUtils->resetTexture();
+        return true;
+      });
+    }
+
+    ImGui::PopItemWidth();
+    // drag event
+    if (triggeredDrag) {
+      fwg.loadForests(cfg, draggedFile);
+      triggeredDrag = false;
+      uiUtils->resetTexture();
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Wasteland")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, fwg.worldMap);
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+    uiUtils->showHelpTextBox("Wasteland");
+    ImGui::SeparatorText("Generate wasteland map or drop it in");
+    if (ImGui::Button("Generate Wasteland Map")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        // fwg.genWasteland(cfg);
+        uiUtils->resetTexture();
+        return true;
+      });
+    }
+    // drag event
+    if (triggeredDrag) {
+      // fwg.loadWasteland(cfg, draggedFile);
+      triggeredDrag = false;
+      uiUtils->resetTexture();
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+
+  if (ImGui::BeginTabItem("Areas")) {
+    if (uiUtils->tabSwitchEvent()) {
+      // force update so sub-selected tabs get updated
+      uiUtils->setForceUpdate();
+      uiUtils->resetTexture();
+    }
+    if (ImGui::BeginTabBar("Area Tabs", ImGuiTabBarFlags_None)) {
+      showDensityTab(cfg, fwg);
+      showSuperSegmentTab(cfg, fwg);
+      showSegmentTab(cfg, fwg);
+      showProvincesTab(cfg, fwg);
+      showContinentTab(cfg, fwg);
+      // showRegionTab(cfg, fwg, &primaryTexture);
+      ImGui::EndTabBar();
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+int fwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Density")) {
+    if (uiUtils->tabSwitchEvent()) {
+      // pre-create density map, if not existing yet, so users see the default
+      // map and can then decide to overwrite (or change parameters)
+      if (!fwg.climateData.habitabilities.size() &&
+          fwg.climateData.climates.size() && fwg.terrainData.landForms.size()) {
+        fwg.genHabitability(cfg);
+      }
+      uiUtils->updateImage(
+          0, Gfx::displayHabitability(fwg.climateData.habitabilities));
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+
+    uiUtils->showHelpTextBox("Density");
+    if (fwg.climateData.size() && fwg.climateData.climates.size() &&
+        fwg.terrainData.landForms.size()) {
+      if (ImGui::Button("Generate density map")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genHabitability(cfg);
+          uiUtils->resetTexture(0);
+          return true;
+        });
+        uiUtils->resetTexture();
+      }
+      if (triggeredDrag) {
+        fwg.loadHabitability(
+            cfg, Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+        uiUtils->resetTexture(0);
+        triggeredDrag = false;
+        uiUtils->resetTexture();
+      }
+    } else {
+      ImGui::Text("Generate climate first");
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+void fwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("SuperSegments")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, Fwg::Gfx::Segments::displaySuperSegments(
+                                  fwg.areaData.superSegments));
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+    uiUtils->showHelpTextBox("SuperSegments");
+
+    ImGui::PushItemWidth(300.0f);
+    if (ImGui::Button("Generate SuperSegments") ||
+        (fwg.areaData.superSegments.empty() && !computationRunning)) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genSuperSegments(cfg);
+        uiUtils->resetTexture();
+        return true;
+      });
+    }
+    ImGui::PopItemWidth();
+    if (fwg.climateData.climates.size()) {
+      if (triggeredDrag) {
+        triggeredDrag = false;
+        fwg.loadSuperSegments(
+            cfg, Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+        uiUtils->resetTexture();
+      }
+    }
+
+    ImGui::EndTabItem();
+  }
+}
+
+void fwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  static auto lastEvent = std::chrono::high_resolution_clock::now();
+
+  if (ImGui::BeginTabItem("Segments")) {
+    // check if 50ms have passed since last event
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - lastEvent);
+    if (uiUtils->tabSwitchEvent() || duration.count() > 50) {
+      lastEvent = now;
+      uiUtils->updateImage(0, fwg.segmentMap);
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+    uiUtils->showHelpTextBox("Segments");
+
+    ImGui::PushItemWidth(300.0f);
+    // To change the segmentCostInfluence value
+    ImGui::InputDouble("Segment Cost Influence", &cfg.segmentCostInfluence,
+                       0.01, 0.1);
+    ImGui::InputDouble("Segment Distance Influence",
+                       &cfg.segmentDistanceInfluence, 0.01, 0.1);
+    if (ImGui::InputInt("targetLandRegionAmount",
+                        &cfg.targetLandRegionAmount)) {
+      cfg.autoLandRegionParams = true;
+      cfg.calcAreaParameters();
+    }
+    if (ImGui::InputInt("targetSeaRegionAmount", &cfg.targetSeaRegionAmount)) {
+      cfg.autoSeaRegionParams = true;
+      cfg.calcAreaParameters();
+    }
+    ImGui::PopItemWidth();
+    if (fwg.climateData.climates.size()) {
+      ImGui::Text("The map has %i land segments",
+                  static_cast<int>(fwg.areaData.landSegments));
+      ImGui::Text("The map has %i sea segments",
+                  static_cast<int>(fwg.areaData.seaSegments));
+      ImGui::Text("The map has %i lake segments",
+                  static_cast<int>(fwg.areaData.lakeSegments));
+
+      // Button to generate segments
+      if (ImGui::Button("Generate Segments")) {
+
+        computationFutureBool = runAsync([&fwg, &cfg]() {
+          fwg.genSegments(cfg);
+          return true;
+        });
+        uiUtils->resetTexture();
+      }
+      if (triggeredDrag) {
+        fwg.loadSegments(cfg,
+                         Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+        fwg.segmentMap =
+            Fwg::Gfx::Segments::displaySegments(fwg.areaData.segments);
+        triggeredDrag = false;
+        uiUtils->resetTexture();
+      }
+    }
+
+    ImGui::EndTabItem();
+  }
+}
+
+int fwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  static auto lastEvent = std::chrono::high_resolution_clock::now();
+  if (ImGui::BeginTabItem("Provinces")) {
+    // check if 50ms have passed since last event
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - lastEvent);
+    if (uiUtils->tabSwitchEvent() || duration.count() > 50) {
+      lastEvent = now;
+      uiUtils->updateImage(0, fwg.provinceMap);
+      uiUtils->updateImage(1, fwg.segmentMap);
+    }
+    uiUtils->showHelpTextBox("Provinces");
+    if (fwg.terrainData.detailedHeightMap.size() &&
+        fwg.terrainData.landForms.size() &&
+        fwg.climateData.habitabilities.size()) {
+      ImGui::PushItemWidth(200.0f);
+      ImGui::SeparatorText("Generate a province map or drop it in");
+      ImGui::InputDouble("Landprovincefactor", &cfg.landProvFactor, 0.1);
+      ImGui::InputDouble("Seaprovincefactor", &cfg.seaProvFactor, 0.1);
+      ImGui::InputDouble("Density Effects", &cfg.provinceDensityEffects, 0.1f);
+      ImGui::InputInt("Minimum size of provinces", &cfg.minProvSize);
+      // don't allow users to go too low
+      cfg.minProvSize = std::max<int>(cfg.minProvSize, 9);
+      ImGui::InputInt("Maximum amount of provinces", &cfg.maxProvAmount, 500);
+      ImGui::PopItemWidth();
+      cfg.landProvFactor = std::clamp(cfg.landProvFactor, 0.0, 10.0);
+      cfg.seaProvFactor = std::clamp(cfg.seaProvFactor, 0.0, 10.0);
+      cfg.provinceDensityEffects =
+          std::clamp(cfg.provinceDensityEffects, 0.0, 1.0);
+      ImGui::Text("The map has %i provinces",
+                  static_cast<int>(fwg.areaData.provinces.size()));
+      if (ImGui::Button("Generate Provinces Map")) {
+        cfg.calcAreaParameters();
+        computationFutureBool = runAsync([&fwg, &cfg]() {
+          if (!fwg.genProvinces()) {
+            return false;
+          }
+          return true;
+        });
+        // redoRegions = true;
+        uiUtils->resetTexture();
+      }
+      if (triggeredDrag) {
+        triggeredDrag = false;
+        redoRegions = true;
+        fwg.loadProvinces(cfg, draggedFile);
+        uiUtils->resetTexture();
+      }
+    } else {
+      ImGui::SeparatorText("Generator other maps first");
+    }
+
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Regions")) {
+    uiUtils->tabSwitchEvent();
+    uiUtils->showHelpTextBox("Regions");
+
+    if (fwg.terrainData.detailedHeightMap.size() &&
+        fwg.terrainData.landForms.size() &&
+        fwg.climateData.habitabilities.size() &&
+        fwg.provinceMap.initialised()) {
+      ImGui::SeparatorText("Generate a region map");
+
+      if (ImGui::Button("Generate Region Map from Segments and Provinces")) {
+        computationFutureBool =
+            runAsync(&Fwg::FastWorldGenerator::genRegions, fwg, cfg);
+        redoRegions = false;
+        uiUtils->resetTexture();
+      }
+      ImGui::Text("The map has %i regions",
+                  static_cast<int>(fwg.areaData.regions.size()));
+      if (triggeredDrag) {
+        if (fwg.provinceMap.initialised()) {
+          try {
+            // fwg.loadRegions(cfg, draggedFile);
+            Utils::Logging::logLine(
+                "If you want to load regions, do it in the segments tab.");
+            redoRegions = false;
+          } catch (std::exception e) {
+            Utils::Logging::logLine(
+                "Couldn't load regions, fix input or try again");
+            fwg.regionMap = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
+          }
+        }
+        triggeredDrag = false;
+        uiUtils->resetTexture();
+      }
+    } else {
+      ImGui::SeparatorText("Generator other maps first");
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+int fwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Continents")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0,
+                           Fwg::Gfx::simpleContinents(fwg.areaData.continents,
+                                                      fwg.areaData.seaBodies));
+      uiUtils->updateImage(
+          1, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
+    }
+    uiUtils->showHelpTextBox("Continents");
+    ImGui::InputInt("Maximum amount of continents", &cfg.maxAmountOfContinents,
+                    1);
+    if (fwg.areaData.landBodies.size() && fwg.areaData.provinces.size()) {
+      if (ImGui::Button("Generate Continents") ||
+          (fwg.areaData.continents.empty() && !computationRunning)) {
+        computationFutureBool = runAsync([&fwg, &cfg]() {
+          fwg.genContinents(cfg);
+          return true;
+        });
+        uiUtils->resetTexture();
+      }
+      // drag event
+      if (triggeredDrag) {
+        fwg.loadContinents(cfg,
+                           Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+        triggeredDrag = false;
+        uiUtils->resetTexture();
+      }
+    } else {
+      if (!fwg.areaData.landBodies.size()) {
+        ImGui::Text("Generate landbodies first");
+      } else if (!fwg.areaData.provinces.size()) {
+        ImGui::Text("Generate provinces first");
+      }
+    }
+
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
+
+void fwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Civilisation")) {
+    if (uiUtils->tabSwitchEvent()) {
+      // force update so sub-selected tabs get updated
+      uiUtils->setForceUpdate();
+      uiUtils->resetTexture();
+    }
+    uiUtils->showHelpTextBox("Civilisation");
+    if (fwg.areaData.provinces.size() && fwg.areaData.regions.size() &&
+        fwg.areaData.continents.size()) {
+      ImGui::SeparatorText("Generate all civ data automatically");
+      if (ImGui::Button("Generate civilisation data")) {
+        computationFutureBool =
+            runAsync(&Fwg::FastWorldGenerator::genCivData, fwg, cfg);
+        uiUtils->resetTexture();
+      }
+      ImGui::PushItemWidth(200.0f);
+      ImGui::InputDouble("<--Development influence on population and city size",
+                         &cfg.developmentInfluence, 0.1);
+      ImGui::InputDouble("<--Minimum Development", &cfg.minimumDevelopment,
+                         0.1);
+      ImGui::InputDouble("<--Maximum Development", &cfg.maximumDevelopment,
+                         0.1);
+
+      ImGui::InputDouble("<--Pop influence on city size",
+                         &cfg.populationInfluence, 0.1);
+      ImGui::InputDouble("<--Urbanisation factor", &cfg.urbanFactor, 0.1);
+      ImGui::InputDouble("<--Agriculture factor", &cfg.agricultureFactor, 0.05);
+      ImGui::PopItemWidth();
+      ImGui::SeparatorText("Manually edit civ data");
+      if (ImGui::BeginTabBar("Civilisation stuff")) {
+        showDevelopmentTab(cfg, fwg);
+        showPopulationTab(cfg, fwg);
+        showLocationTab(cfg, fwg);
+        ImGui::EndTabBar();
+      }
+    } else {
+      ImGui::Text("Generate other maps first");
+    }
+
+    ImGui::EndTabItem();
+  }
+}
+
+void fwgUI::showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  static bool drawingMode = false;
+  if (ImGui::BeginTabItem("Development")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, Gfx::displayDevelopment(fwg.areaData.provinces));
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+    if (!fwg.areaData.provinces.size()) {
+      ImGui::Text("Provinces are missing, make sure there were no errors in "
+                  "the province generation.");
+    } else if (!fwg.areaData.regions.size()) {
+      ImGui::Text("Regions are missing, make sure there were no errors in the "
+                  "region generation.");
+    } else {
+      if (triggeredDrag) {
+        triggeredDrag = false;
+        // load development map
+        fwg.loadDevelopment(cfg, draggedFile);
+        uiUtils->resetTexture();
+      }
+      ImGui::PushItemWidth(200.0f);
+      for (auto &continent : fwg.areaData.continents) {
+        std::string displayString =
+            "Continent development modifier for continent" +
+            std::to_string(continent.ID);
+        ImGui::InputDouble(displayString.c_str(),
+                           &continent.developmentModifier);
+      }
+      ImGui::Checkbox("Random Development", &cfg.randomDevelopment);
+      if (ImGui::Button("Generate Development")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genDevelopment(cfg);
+          return true;
+        });
+        uiUtils->resetTexture();
+      }
+      // ImGui::Checkbox("Draw mode", &drawingMode);
+      ImGui::PopItemWidth();
+      // for drawing. Simpledraw not possible due to per-province edit
+      // auto affected = uiUtils->getLatestAffectedPixels();
+      // if (affected.size() > 0) {
+      //  for (auto &pix : affected) {
+      //    if (fwg.terrainData.landForms[pix.first.pixel].altitude > 0.0) {
+      //      const auto &colour = fwg.provinceMap[pix.first.pixel];
+      //      if (fwg.areaData.provinceColourMap.find(colour)) {
+      //        const auto &prov = fwg.areaData.provinceColourMap[colour];
+      //        // only allow drawing if enabled, otherwise take the click as a
+      //        // select of the continent
+      //        if (drawingMode) {
+      //          if (pix.first.type == InteractionType::CLICK) {
+      //            prov->developmentFactor = pix.second;
+      //          } else if (pix.first.type == InteractionType::RCLICK) {
+      //            prov->developmentFactor = 0.0;
+      //          }
+      //        } else {
+      //          // sets the development modifier to the brush strength
+      //          if (pix.first.type == InteractionType::CLICK) {
+      //            for (auto &continent : fwg.areaData.continents) {
+      //              if (continent.ID == prov->continentID) {
+      //                continent.developmentModifier = pix.second;
+      //              }
+      //            }
+      //          }
+      //        }
+      //      }
+      //    }
+      //  }
+      //  // we had a click event, therefore setting the dev modifier. We want
+      //  to
+      //  // update, but not re-randomize the just changed development modifier,
+      //  // so this must mean that we want to turn off random development
+      //  if (!drawingMode) {
+      //    cfg.randomDevelopment = false;
+      //    fwg.genDevelopment(cfg);
+      //  }
+      //  uiUtils->resetTexture();
+      //}
+    }
+    ImGui::EndTabItem();
+  }
+}
+
+void fwgUI::showPopulationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Population")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, Gfx::displayPopulation(fwg.areaData.provinces));
+      uiUtils->updateImage(1, fwg.worldMap);
+    }
+    if (!fwg.areaData.provinces.size()) {
+      ImGui::Text("Provinces are missing, make sure there were no errors in "
+                  "the province generation.");
+    } else if (!fwg.areaData.regions.size()) {
+      ImGui::Text("Regions are missing, make sure there were no errors in the "
+                  "region generation.");
+    } else {
+      if (ImGui::Button("Generate Population")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genPopulation(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
+      }
+
+      ImGui::SeparatorText(
+          "Drag and drop in an image of the correct resolution to set the "
+          "population density. The red channel of the input image will be "
+          "used "
+          "to set population, where bright red means high population, black "
+          "means no population");
+      if (triggeredDrag) {
+        triggeredDrag = false;
+        // load population map
+        fwg.loadPopulation(cfg,
+                           Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+        uiUtils->resetTexture();
+      }
+      // for drawing
+      // auto affected = uiUtils->getLatestAffectedPixels();
+      // if (affected.size() > 0) {
+      //  for (auto &pix : affected) {
+      //    if (fwg.terrainData.landForms[pix.first.pixel].altitude > 0.0) {
+      //      const auto &colour = fwg.provinceMap[pix.first.pixel];
+      //      if (fwg.areaData.provinceColourMap.find(colour)) {
+      //        const auto &prov = fwg.areaData.provinceColourMap[colour];
+      //        if (pix.first.type == InteractionType::CLICK) {
+      //          prov->populationDensity = pix.second;
+      //        } else if (pix.first.type == InteractionType::RCLICK) {
+      //          prov->populationDensity = 0.0;
+      //        }
+      //      }
+      //    }
+      //  }
+      //  uiUtils->resetTexture();
+      //}
+    }
+    ImGui::EndTabItem();
+  }
+}
+void fwgUI::showLocationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+
+  if (ImGui::BeginTabItem("Locations")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(
+          0, Gfx::displayLocations(fwg.areaData.regions, fwg.worldMap));
+      uiUtils->updateImage(1, fwg.regionMap);
+    }
+    ImGui::SliderInt("Amount of separate cities per region",
+                     &cfg.citiesPerRegion, 1, 10);
+    ImGui::SliderInt("Amount of separate farm areas per region",
+                     &cfg.agriculturePerRegion, 1, 10);
+
+    if (fwg.areaData.regions.size()) {
+      if (ImGui::Button("Generate Locations")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genLocations(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
+      }
+
+      if (triggeredDrag) {
+        triggeredDrag = false;
+      }
+
+    } else {
+      ImGui::Text("Generate regions first.");
+    }
+    ImGui::EndTabItem();
+  }
+}
+
+void fwgUI::showNavmeshTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Navmesh")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0, Fwg::Gfx::displayConnections(fwg.areaData.regions,
+                                                           fwg.locationMap));
+      uiUtils->updateImage(1, fwg.regionMap);
+    }
+    if (fwg.regionMap.initialised() && fwg.locationMap.initialised()) {
+      if (ImGui::Button("Generate Navmesh")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genNavmesh(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
+      }
+
+      if (triggeredDrag) {
+        triggeredDrag = false;
+      }
+    } else {
+      ImGui::Text("Generate other maps first");
+    }
+    ImGui::EndTabItem();
+  }
+}
+
+void fwgUI::showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Cities")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(0,
+                           Fwg::Gfx::displayUrban(fwg.worldMap, fwg.civLayer));
+      uiUtils->updateImage(1, fwg.regionMap);
+    }
+    if (fwg.provinceMap.initialised()) {
+
+      if (ImGui::Button("Generate Cities")) {
+        computationFutureBool =
+            runAsync(&Fwg::FastWorldGenerator::genUrbanisation, fwg, cfg);
+        uiUtils->resetTexture();
+      }
+      ImGui::SeparatorText(
+          "Drag and drop in an image of the correct resolution to set the "
+          "city density. The shade of red of the input image will be used "
+          "to set cities, where bright red means dense cities, black "
+          "means no cities. Ensure the colour is pure red!");
+      ImGui::SeparatorText(
+          "It is recommended to take an image such as the worldmap.png and "
+          "draw into it with red, and then drag it in. This way, you have a "
+          "reference for drawing cities");
+      ImGui::SeparatorText(
+          "You can also draw in this image, making use of the brush settings "
+          "at the top. Zoom with Ctrl + Mousewheel. Drag with Ctrl + left "
+          "mouse");
+      if (triggeredDrag) {
+        // load city map
+        fwg.loadUrbanisation(cfg, draggedFile);
+        triggeredDrag = false;
+        uiUtils->resetTexture();
+      }
+
+      // for drawing
+      // auto affected = uiUtils->getLatestAffectedPixels();
+      // if (affected.size() > 0) {
+      //  for (auto &pix : affected) {
+      //    if (fwg.terrainData.landForms[pix.first.pixel].altitude > 0.0) {
+      //      if (pix.first.type == InteractionType::CLICK) {
+      //        fwg.civLayer.urbanisation[pix.first.pixel] =
+      //            static_cast<unsigned char>(pix.second * 255.0f);
+      //      } else if (pix.first.type == InteractionType::RCLICK) {
+      //        fwg.civLayer.urbanisation[pix.first.pixel] = 0;
+      //      }
+      //    }
+      //  }
+
+      //  displayImage = Fwg::Gfx::displayUrban(fwg.worldMap, fwg.civLayer);
+      //  uiUtils->resetTexture();
+      //}
+
+    } else {
+      ImGui::Text("Generate other maps first");
+    }
+    ImGui::EndTabItem();
+  }
+}
+void fwgUI::showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  if (ImGui::BeginTabItem("Agriculture")) {
+    if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(
+          0, Fwg::Gfx::displayAgriculture(fwg.worldMap, fwg.civLayer));
+      uiUtils->updateImage(1, fwg.regionMap);
+    }
+    if (fwg.provinceMap.initialised()) {
+      if (ImGui::Button("Generate Agriculture")) {
+        computationFutureBool =
+            runAsync(&Fwg::FastWorldGenerator::genAgriculture, fwg, cfg);
+        uiUtils->resetTexture();
+      }
+      ImGui::SeparatorText(
+          "Drag and drop in an image of the correct resolution to set the "
+          "agriculture density. The shade of red of the input image will be "
+          "used "
+          "to set agriculture, where bright red means dense agriculture, black "
+          "means no agriculture. Ensure the colour is pure red!");
+      ImGui::SeparatorText(
+          "It is recommended to take an image such as the worldmap.png and "
+          "draw into it with red, and then drag it in. This way, you have a "
+          "reference for drawing agriculture");
+      ImGui::SeparatorText(
+          "You can also draw in this image, making use of the brush settings "
+          "at the top. Zoom with Ctrl + Mousewheel. Drag with Ctrl + left "
+          "mouse");
+      if (triggeredDrag) {
+        // load city map
+        fwg.loadAgriculture(cfg, draggedFile);
+        triggeredDrag = false;
+        uiUtils->resetTexture();
+      }
+
+      // for drawing
+      // auto affected = uiUtils->getLatestAffectedPixels();
+      // if (affected.size() > 0) {
+      //  for (auto &pix : affected) {
+      //    if (fwg.terrainData.landForms[pix.first.pixel].altitude > 0.0) {
+      //      if (pix.first.type == InteractionType::CLICK) {
+      //        fwg.civLayer.agriculture[pix.first.pixel] =
+      //            static_cast<unsigned char>(pix.second * 255.0f);
+      //      } else if (pix.first.type == InteractionType::RCLICK) {
+      //        fwg.civLayer.agriculture[pix.first.pixel] = 0;
+      //      }
+      //    }
+      //  }
+
+      //  displayImage = Fwg::Gfx::displayAgriculture(fwg.worldMap,
+      //  fwg.civLayer); uiUtils->resetTexture();
+      //}
+
+    } else {
+      ImGui::Text("Generate other maps first");
+    }
+    ImGui::EndTabItem();
+  }
+}
+// Helper functions
+
+bool fwgUI::CreateDeviceD3D(HWND hWnd) {
+  // Setup swap chain
+  DXGI_SWAP_CHAIN_DESC sd;
+  ZeroMemory(&sd, sizeof(sd));
+  sd.BufferCount = 2;
+  sd.BufferDesc.Width = 0;
+  sd.BufferDesc.Height = 0;
+  sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  sd.BufferDesc.RefreshRate.Numerator = 60;
+  sd.BufferDesc.RefreshRate.Denominator = 1;
+  sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+  sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+  sd.OutputWindow = hWnd;
+  sd.SampleDesc.Count = 1;
+  sd.SampleDesc.Quality = 0;
+  sd.Windowed = TRUE;
+  sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+
+  UINT createDeviceFlags = 0;
+  // createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+  D3D_FEATURE_LEVEL featureLevel;
+  const D3D_FEATURE_LEVEL featureLevelArray[2] = {
+      D3D_FEATURE_LEVEL_11_0,
+      D3D_FEATURE_LEVEL_10_0,
+  };
+  HRESULT res = D3D11CreateDeviceAndSwapChain(
+      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
+      featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
+      &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
+  if (res == DXGI_ERROR_UNSUPPORTED) // Try high-performance WARP software
+                                     // driver if hardware is not available.
+    res = D3D11CreateDeviceAndSwapChain(
+        nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags,
+        featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
+        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
+  if (res != S_OK)
+    return false;
+
+  CreateRenderTarget();
+  return true;
+}
+
+void fwgUI::CleanupDeviceD3D() {
+  CleanupRenderTarget();
+  if (g_pSwapChain) {
+    g_pSwapChain->Release();
+    g_pSwapChain = nullptr;
+  }
+  if (g_pd3dDeviceContext) {
+    g_pd3dDeviceContext->Release();
+    g_pd3dDeviceContext = nullptr;
+  }
+  uiUtils->cleanupDirect3DDevice(g_pd3dDevice);
+}
+
+void fwgUI::CreateRenderTarget() {
+  ID3D11Texture2D *pBackBuffer;
+  g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+  if (pBackBuffer != nullptr) {
+    g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr,
+                                         &g_mainRenderTargetView);
+    pBackBuffer->Release();
+  } else {
+    throw(std::exception("Could not get buffer of RenderTargetView"));
+  }
+}
+
+void fwgUI::CleanupRenderTarget() {
+  if (g_mainRenderTargetView) {
+    g_mainRenderTargetView->Release();
+    g_mainRenderTargetView = nullptr;
+  }
+}
+
+} // namespace Fwg
