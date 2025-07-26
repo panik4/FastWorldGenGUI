@@ -2,7 +2,7 @@
 #define _SCL_SECURE_NO_WARNINGS
 #pragma warning(disable : 4996)
 #include "FastWorldGenerator.h"
-#include "UI/fwgUI.h"
+#include "UI/FwgUI.h"
 #include "Utils/Logging.h"
 #include "Utils/Utils.h"
 #include <filesystem>
@@ -83,6 +83,6 @@ int main() {
 
 
   Fwg::FastWorldGenerator fwg;
-  Fwg::fwgUI ui;
+  Fwg::FwgUI ui;
   ui.shiny(fwg);
 }

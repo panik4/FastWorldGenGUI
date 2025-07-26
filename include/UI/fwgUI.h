@@ -13,7 +13,7 @@
 
 namespace Fwg {
 
-class fwgUI {
+class FwgUI {
 
 protected:
   // Function wrapper to run any function asynchronously
@@ -124,7 +124,19 @@ protected:
   }
 
 public:
-  fwgUI();
+  FwgUI();
+  WNDCLASSEXW initializeWindowClass();
+  bool initializeGraphics(HWND hwnd);
+  void initializeImGui(HWND hwnd);
+  void genericWrapper();
+  void logWrapper();
+  void imageWrapper(ImGuiIO &io);
+  int init(Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+  void initDraggingPoll(bool &done);
+  void defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg);
+  void computationRunningCheck();
+  HWND createMainWindow(const WNDCLASSEXW &wc);
+  void cleanup(HWND hwnd, const WNDCLASSEXW &wc);
   int shiny(Fwg::FastWorldGenerator &fwg);
 };
 } // namespace Fwg

@@ -137,11 +137,12 @@ void UIUtils::updateImage(int index, const Fwg::Gfx::Bitmap &image) {
   auto &texture = (index == 0) ? primaryTexture : secondaryTexture;
   auto &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
 
+  Fwg::Utils::Logging::logLine(
+      "UIUtils::updateImage: Updating image at index " + std::to_string(index) +
+      " with size: " + std::to_string(image.size()));
   freeTexture(&texture);
   updateFlag = false;
 
-  textureWidth = image.width();
-  textureHeight = image.height();
 
   const size_t expectedSize = textureWidth * textureHeight;
   if (image.initialised() && image.imageData.size()) {
@@ -154,6 +155,8 @@ void UIUtils::updateImage(int index, const Fwg::Gfx::Bitmap &image) {
           Fwg::Utils::Logging::logLine("ERROR: Couldn't get resource view");
         }
       }
+      textureWidth = image.width();
+      textureHeight = image.height();
     } catch (const std::exception &e) {
       Fwg::Utils::Logging::logLine(
           std::string("ERROR: Exception in updateImage: ") + e.what());

@@ -73,10 +73,10 @@ bool ClimateUI::analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       if (!climateInputColours.find(colour)) {
         // set it
         climateInputColours.setValue(
-            colour,
-            ClimateInput{colour, colour, "Unclassified",
-                         allowedClimateInputs.at(cfg.climateColours.at("continentalhot")),
-                         inputColourVisualHelp});
+            colour, ClimateInput{colour, colour, "Unclassified",
+                                 allowedClimateInputs.at(
+                                     cfg.climateColours.at("continentalhot")),
+                                 inputColourVisualHelp});
         climateInputColours[colour].pixels.push_back(imageIndex);
         amountClassificationsNeeded++;
       } else {
@@ -129,8 +129,7 @@ void ClimateUI::complexTerrainMapping(Fwg::Cfg &cfg,
   if (ImGui::Button("Analyze Input. Don't forget to apply mappings before "
                     "clicking this") ||
       analyze) {
-    analyzeClimateMap(cfg, fwg, climateInputMap,
-                      amountClassificationsNeeded);
+    analyzeClimateMap(cfg, fwg, climateInputMap, amountClassificationsNeeded);
     analyze = false;
   }
   ImGui::Value("Colours needing classification: ", amountClassificationsNeeded);

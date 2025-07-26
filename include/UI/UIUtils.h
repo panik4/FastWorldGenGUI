@@ -1,7 +1,8 @@
+#pragma once
 #include "FastWorldGenerator.h"
-#include "imgui.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
+#include "imgui.h"
 
 enum class InteractionType { NONE, CLICK, RCLICK, DRAG };
 

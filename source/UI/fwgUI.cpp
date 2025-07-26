@@ -1,4 +1,4 @@
-#include "UI/fwgUI.h"
+#include "UI/FwgUI.h"
 
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
@@ -7,12 +7,12 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
                                                              LPARAM lParam);
 namespace Fwg {
 // Data
-ID3D11Device *fwgUI::g_pd3dDevice = nullptr;
-ID3D11DeviceContext *fwgUI::g_pd3dDeviceContext = nullptr;
-IDXGISwapChain *fwgUI::g_pSwapChain = nullptr;
+ID3D11Device *FwgUI::g_pd3dDevice = nullptr;
+ID3D11DeviceContext *FwgUI::g_pd3dDeviceContext = nullptr;
+IDXGISwapChain *FwgUI::g_pSwapChain = nullptr;
 UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
-ID3D11RenderTargetView *fwgUI::g_mainRenderTargetView = nullptr;
-int fwgUI::seed = 0;
+ID3D11RenderTargetView *FwgUI::g_mainRenderTargetView = nullptr;
+int FwgUI::seed = 0;
 
 // Win32 message handler
 // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if
@@ -46,67 +46,276 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   return ::DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-fwgUI::fwgUI() {
+FwgUI::FwgUI() {
 
   uiUtils = std::make_shared<UIUtils>();
   landUI = LandUI(uiUtils);
 }
 
-int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
+WNDCLASSEXW FwgUI::initializeWindowClass() {
+  WNDCLASSEXW wc = {sizeof(wc),
+                    CS_CLASSDC,
+                    WndProc,
+                    0L,
+                    0L,
+                    GetModuleHandle(nullptr),
+                    nullptr,
+                    nullptr,
+                    nullptr,
+                    nullptr,
+                    L"FastWorldGen",
+                    nullptr};
+
+  HICON hIcon = (HICON)LoadImage(
+      NULL, (Cfg::Values().workingDirectory + "//worldMap.ico").c_str(),
+      IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
+  if (hIcon) {
+    wc.hIcon = hIcon;
+    HWND consoleWindow = GetConsoleWindow();
+    SendMessage(consoleWindow, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    SendMessage(consoleWindow, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+  }
+  return wc;
+}
+
+bool FwgUI::initializeGraphics(HWND hwnd) {
+  if (!CreateDeviceD3D(hwnd)) {
+    CleanupDeviceD3D();
+    return false;
+  }
+  ::ShowWindow(hwnd, SW_SHOWDEFAULT);
+  ::UpdateWindow(hwnd);
+  return true;
+}
+
+void FwgUI::initializeImGui(HWND hwnd) {
+  uiUtils->setupImGuiContextAndStyle();
+  ImGui::StyleColorsDark();
+  uiUtils->setupImGuiBackends(hwnd, g_pd3dDevice, g_pd3dDeviceContext);
+}
+void FwgUI::genericWrapper() {
+  {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
+
+    ImGui::BeginChild(
+        "GenericWrapper",
+        ImVec2(
+            ImGui::GetContentRegionAvail().x * 1.0f,
+            std::max<float>(ImGui::GetContentRegionAvail().y * 0.3f, 100.0f)),
+        false, ImGuiWindowFlags_None);
+
+    ImGui::EndChild();
+    // Draw a frame around the child region
+    ImVec2 childMin = ImGui::GetItemRectMin();
+    ImVec2 childMax = ImGui::GetItemRectMax();
+    ImGui::GetWindowDrawList()->AddRect(
+        childMin, childMax, IM_COL32(50, 91, 120, 255), 0.0f, 0, 2.0f);
+    ImGui::PopStyleColor();
+  }
+}
+
+void FwgUI::logWrapper() {
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
+  ImGui::BeginChild("Log",
+                    ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
+                           ImGui::GetContentRegionAvail().y * 1.0f),
+                    false, ImGuiWindowFlags_None);
+  {
+    ImGui::TextUnformatted(log->str().c_str());
+    if (!ImGui::IsWindowHovered()) {
+      // scroll to bottom
+      ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    // Draw a frame around the child region
+    ImVec2 childMin = ImGui::GetItemRectMin();
+    ImVec2 childMax = ImGui::GetItemRectMax();
+    ImGui::GetWindowDrawList()->AddRect(
+        childMin, childMax, IM_COL32(25, 91, 133, 255), 0.0f, 0, 2.0f);
+  }
+  ImGui::EndChild();
+  // Draw a frame around the child region
+  ImVec2 childMin = ImGui::GetItemRectMin();
+  ImVec2 childMax = ImGui::GetItemRectMax();
+  ImGui::GetWindowDrawList()->AddRect(
+      childMin, childMax, IM_COL32(64, 69, 112, 255), 0.0f, 0, 2.0f);
+}
+
+void FwgUI::imageWrapper(ImGuiIO &io) {
+  static ImVec2 cursorPos;
+
+  float modif = 1.0 - (uiUtils->secondaryTexture != nullptr) * 0.5;
+  if (uiUtils->textureWidth > 0 && uiUtils->textureHeight > 0) {
+    float aspectRatio =
+        (float)uiUtils->textureWidth / (float)uiUtils->textureHeight;
+    auto scale = std::min<float>(
+        (ImGui::GetContentRegionAvail().y) * modif / uiUtils->textureHeight,
+        (ImGui::GetContentRegionAvail().x) / uiUtils->textureWidth);
+    auto texWidth = uiUtils->textureWidth * scale;
+    auto texHeight = uiUtils->textureHeight * scale;
+
+    // Handle zooming
+    if (io.KeyCtrl) {
+      zoom += io.MouseWheel * 0.1f;
+    }
+
+    // Create a child window for the image
+    ImGui::BeginChild("ImageContainer", ImVec2(0, 0), false,
+                      ImGuiWindowFlags_HorizontalScrollbar |
+                          ImGuiWindowFlags_AlwaysVerticalScrollbar);
+    {
+      ImGui::BeginChild("Image", ImVec2(texWidth, texHeight), false,
+                        ImGuiWindowFlags_HorizontalScrollbar |
+                            ImGuiWindowFlags_AlwaysVerticalScrollbar);
+      if (uiUtils->primaryTexture != nullptr) {
+        ImGui::Image((void *)uiUtils->primaryTexture,
+                     ImVec2(texWidth * zoom * 0.98, texHeight * zoom * 0.98));
+        if (io.KeyCtrl && io.MouseWheel) {
+          // Get the mouse position relative to the image
+          ImVec2 mouse_pos = ImGui::GetMousePos();
+          ImVec2 image_pos = ImGui::GetItemRectMin();
+          auto itemsize = ImGui::GetItemRectSize();
+          ImVec2 mouse_pos_relative =
+              ImVec2(mouse_pos.x - image_pos.x, mouse_pos.y - image_pos.y);
+          // Calculate the pixel position in the texture
+          float pixel_x = ((mouse_pos_relative.x / itemsize.x));
+          float pixel_y = ((mouse_pos_relative.y / itemsize.y));
+          ImGui::SetScrollHereY(std::clamp(pixel_y, 0.0f, 1.0f));
+          ImGui::SetScrollHereX(std::clamp(pixel_x, 0.0f, 1.0f));
+        }
+
+        // Handle dragging
+        if (io.KeyCtrl && ImGui::IsMouseDragging(0, 0.0f)) {
+          ImVec2 drag_delta = ImGui::GetMouseDragDelta(0, 0.0f);
+          ImGui::ResetMouseDragDelta(0);
+          ImGui::SetScrollX(ImGui::GetScrollX() - drag_delta.x);
+          ImGui::SetScrollY(ImGui::GetScrollY() - drag_delta.y);
+        }
+        if (!io.KeyCtrl) {
+          uiUtils->imageClick(scale, io);
+        }
+      }
+      // End the child window
+      ImGui::EndChild();
+
+      if (uiUtils->secondaryTexture != nullptr) {
+        ImGui::BeginChild("ImageSecondary", ImVec2(texWidth, texHeight), false,
+                          ImGuiWindowFlags_HorizontalScrollbar |
+                              ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        // images are less wide, on a usual 16x9 monitor, it is better
+        // to place them besides each other if (aspectRatio <= 2.0)
+        ImGui::Image((void *)uiUtils->secondaryTexture,
+                     ImVec2(uiUtils->textureWidth * scale * 0.98,
+                            uiUtils->textureHeight * scale * 0.98));
+        ImGui::EndChild();
+      }
+    }
+    ImGui::EndChild();
+  }
+}
+
+int FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  this->uiUtils->loadHelpTextsFromFile(Fwg::Cfg::Values().resourcePath +
+                                       "uiHelpTexts.txt");
+  uiUtils->setClickOffsets(cfg.width, 1);
+  frequency = cfg.overallFrequencyModifier;
+  log = std::make_shared<std::stringstream>();
+  *log << Fwg::Utils::Logging::Logger::logInstance.getFullLog();
+  Fwg::Utils::Logging::Logger::logInstance.attachStream(log);
+  fwg.configure(cfg);
+  initAllowedInput(cfg, fwg.climateData, fwg.terrainData.elevationTypes);
+}
+
+void FwgUI::initDraggingPoll(bool &done) {
+  // reset dragging all the time in case it wasn't handled in a tab on
+  // purpose
+  triggeredDrag = false;
+  // Poll and handle messages (inputs, window resize, etc.)
+  // See the WndProc() function below for our to dispatch events to the
+  // Win32 backend.
+  MSG msg;
+  while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+    ::TranslateMessage(&msg);
+    ::DispatchMessage(&msg);
+    if (msg.message == WM_QUIT)
+      done = true;
+    else if (msg.message == WM_DROPFILES) {
+      HDROP hDrop = reinterpret_cast<HDROP>(msg.wParam);
+
+      // extract files here
+      std::vector<std::string> files;
+      char filename[MAX_PATH];
+
+      UINT count = DragQueryFileA(hDrop, -1, NULL, 0);
+      for (UINT i = 0; i < count; ++i) {
+        if (DragQueryFileA(hDrop, i, filename, MAX_PATH)) {
+          files.push_back(filename);
+          // Fwg::Utils::Logging::logLine("Loaded file ", filename);
+        }
+      }
+      draggedFile = files.back();
+      triggeredDrag = true;
+      DragFinish(hDrop);
+    }
+  }
+
+  // Handle window resize (we don't resize directly in the WM_SIZE
+  // handler)
+  if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
+    CleanupRenderTarget();
+    g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight,
+                                DXGI_FORMAT_UNKNOWN, 0);
+    g_ResizeWidth = g_ResizeHeight = 0;
+    CreateRenderTarget();
+  }
+}
+
+void FwgUI::defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg) {
+  showElevationTabs(cfg, fwg);
+  showClimateInputTab(cfg, fwg);
+  showClimateOverview(cfg, fwg);
+  showAreasTab(cfg, fwg);
+  showCivilizationTab(cfg, fwg);
+}
+
+void FwgUI::computationRunningCheck() {
+  // Check if the computation is done
+  if (computationRunning && computationFutureBool.wait_for(std::chrono::seconds(
+                                0)) == std::future_status::ready) {
+    computationRunning = false;
+    uiUtils->resetTexture();
+  }
+
+  if (computationRunning) {
+    computationStarted = false;
+    ImGui::Text("Working, please be patient");
+  } else {
+    ImGui::Text("Ready!");
+  }
+}
+
+void FwgUI::cleanup(HWND hwnd, const WNDCLASSEXW &wc) {
+  uiUtils->shutdownImGui();
+  CleanupDeviceD3D();
+  ::DestroyWindow(hwnd);
+  ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+}
+
+int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
   try {
     //  Create application window
     //  ImGui_ImplWin32_EnableDpiAwareness();
-    WNDCLASSEXW wc = {sizeof(wc),
-                      CS_CLASSDC,
-                      WndProc,
-                      0L,
-                      0L,
-                      GetModuleHandle(nullptr),
-                      nullptr,
-                      nullptr,
-                      nullptr,
-                      nullptr,
-                      L"RandomParadox",
-                      nullptr};
-    HICON hIcon = (HICON)LoadImage(
-        NULL, (Cfg::Values().workingDirectory + "//worldMap.ico").c_str(),
-        IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
-    if (hIcon) {
-      // Icon loaded successfully, set it to the window class
-      wc.hIcon = hIcon;
-    } else {
-      // Icon failed to load, handle error
-      DWORD error = GetLastError();
-      // handle error...
-    }
+    auto wc = initializeWindowClass();
 
     HWND consoleWindow = GetConsoleWindow();
 
-    SendMessage(consoleWindow, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-    SendMessage(consoleWindow, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
     ::RegisterClassExW(&wc);
     HWND hwnd = uiUtils->createAndConfigureWindow(wc, wc.lpszClassName,
                                                   L"FastWorldGen 0.9.1");
-    // Initialize Direct3D
-    if (!CreateDeviceD3D(hwnd)) {
-      CleanupDeviceD3D();
-      ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
-      return 1;
-    }
-
-    // Show the window
-    ::ShowWindow(hwnd, SW_SHOWDEFAULT);
-    ::UpdateWindow(hwnd);
-
-    // Setup Dear ImGui context
-    uiUtils->setupImGuiContextAndStyle();
+    initializeGraphics(hwnd);
+    initializeImGui(hwnd);
     auto &io = ImGui::GetIO();
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-    // ImGui::StyleColorsLight();
-
-    // Setup Platform/Renderer backends
-    uiUtils->setupImGuiBackends(hwnd, g_pd3dDevice, g_pd3dDeviceContext);
 
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
     auto &cfg = Fwg::Cfg::Values();
@@ -118,62 +327,11 @@ int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
     uiUtils->device = g_pd3dDevice;
     namespace fs = std::filesystem;
 
-    initAllowedInput(cfg, fwg.climateData, fwg.terrainData.elevationTypes);
-    // this->uiUtils->loadHelpTextsFromFile(Fwg::Cfg::Values().resourcePath +
-    // "uiHelpTexts.txt");
-    uiUtils->setClickOffsets(cfg.width, 1);
-    frequency = cfg.overallFrequencyModifier;
-    log = std::make_shared<std::stringstream>();
-    *log << Fwg::Utils::Logging::Logger::logInstance.getFullLog();
-    Fwg::Utils::Logging::Logger::logInstance.attachStream(log);
-    fwg.configure(cfg);
-    initAllowedInput(cfg, fwg.climateData, fwg.terrainData.elevationTypes);
+    init(cfg, fwg);
+
     while (!done) {
       try {
-        // reset dragging all the time in case it wasn't handled in a tab on
-        // purpose
-        triggeredDrag = false;
-        // Poll and handle messages (inputs, window resize, etc.)
-        // See the WndProc() function below for our to dispatch events to the
-        // Win32 backend.
-        MSG msg;
-        while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
-          ::TranslateMessage(&msg);
-          ::DispatchMessage(&msg);
-          if (msg.message == WM_QUIT)
-            done = true;
-          else if (msg.message == WM_DROPFILES) {
-            HDROP hDrop = reinterpret_cast<HDROP>(msg.wParam);
-
-            // extract files here
-            std::vector<std::string> files;
-            char filename[MAX_PATH];
-
-            UINT count = DragQueryFileA(hDrop, -1, NULL, 0);
-            for (UINT i = 0; i < count; ++i) {
-              if (DragQueryFileA(hDrop, i, filename, MAX_PATH)) {
-                files.push_back(filename);
-                // Fwg::Utils::Logging::logLine("Loaded file ", filename);
-              }
-            }
-            draggedFile = files.back();
-            triggeredDrag = true;
-            DragFinish(hDrop);
-          }
-        }
-        if (done)
-          break;
-
-        // Handle window resize (we don't resize directly in the WM_SIZE
-        // handler)
-        if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
-          CleanupRenderTarget();
-          g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight,
-                                      DXGI_FORMAT_UNKNOWN, 0);
-          g_ResizeWidth = g_ResizeHeight = 0;
-          CreateRenderTarget();
-        }
-
+        initDraggingPoll(done);
         // Start the Dear ImGui frame
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
@@ -183,8 +341,6 @@ int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
           ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y});
           ImGui::Begin("FastWorldGen");
           // observer checks for "Error"
-
-
 
           ImGui::BeginChild("LeftContent",
                             ImVec2(ImGui::GetContentRegionAvail().x * 0.4f,
@@ -208,44 +364,19 @@ int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
                   ImGui::BeginDisabled();
                 }
 
-                showElevationTabs(cfg, fwg);
-                showClimateInputTab(cfg, fwg);
-                showClimateOverview(cfg, fwg);
-                showAreasTab(cfg, fwg);
-                showCivilizationTab(cfg, fwg);
+                defaultTabs(cfg, fwg);
                 // Re-enable inputs if computation is running
                 if (computationRunning && !computationStarted) {
                   ImGui::EndDisabled();
                 }
-                // Check if the computation is done
-                if (computationRunning &&
-                    computationFutureBool.wait_for(std::chrono::seconds(0)) ==
-                        std::future_status::ready) {
-                  computationRunning = false;
-                  uiUtils->resetTexture();
-                }
-
-                if (computationRunning) {
-                  computationStarted = false;
-                  ImGui::Text("Working, please be patient");
-                  static auto lastTime = std::chrono::steady_clock::now();
-
-                  auto currentTime = std::chrono::steady_clock::now();
-                  auto elapsedTime =
-                      std::chrono::duration_cast<std::chrono::seconds>(
-                          currentTime - lastTime)
-                          .count();
-
-                  // TODO: Image updates?
-                } else {
-                  ImGui::Text("Ready!");
-                }
+                computationRunningCheck();
 
                 ImGui::EndTabBar();
               }
 
               ImGui::PopStyleColor();
               ImGui::EndChild();
+
               // Draw a frame around the child region
               ImVec2 childMin = ImGui::GetItemRectMin();
               ImVec2 childMax = ImGui::GetItemRectMax();
@@ -253,131 +384,12 @@ int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
                                                   IM_COL32(100, 90, 180, 255),
                                                   0.0f, 0, 2.0f);
             }
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-            {
-              ImGui::PushStyleColor(ImGuiCol_ChildBg,
-                                    IM_COL32(30, 100, 144, 40));
-
-              ImGui::BeginChild(
-                  "GenericWrapper",
-                  ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
-                         std::max<float>(
-                             ImGui::GetContentRegionAvail().y * 0.3f, 100.0f)),
-                  false, window_flags);
-
-              ImGui::EndChild();
-              // Draw a frame around the child region
-              ImVec2 childMin = ImGui::GetItemRectMin();
-              ImVec2 childMax = ImGui::GetItemRectMax();
-              ImGui::GetWindowDrawList()->AddRect(childMin, childMax,
-                                                  IM_COL32(50, 91, 120, 255),
-                                                  0.0f, 0, 2.0f);
-              ImGui::PopStyleColor();
-            }
-
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
-            ImGui::BeginChild("Log",
-                              ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
-                                     ImGui::GetContentRegionAvail().y * 1.0f),
-                              false, window_flags);
-            {
-              ImGui::TextUnformatted(log->str().c_str());
-              if (!ImGui::IsWindowHovered()) {
-                // scroll to bottom
-                ImGui::SetScrollHereY(1.0f);
-              }
-              ImGui::EndChild();
-              ImGui::PopStyleColor();
-              // Draw a frame around the child region
-              ImVec2 childMin = ImGui::GetItemRectMin();
-              ImVec2 childMax = ImGui::GetItemRectMax();
-              ImGui::GetWindowDrawList()->AddRect(childMin, childMax,
-                                                  IM_COL32(25, 91, 133, 255),
-                                                  0.0f, 0, 2.0f);
-            }
-            ImGui::EndChild();
-            // Draw a frame around the child region
-            ImVec2 childMin = ImGui::GetItemRectMin();
-            ImVec2 childMax = ImGui::GetItemRectMax();
-            ImGui::GetWindowDrawList()->AddRect(
-                childMin, childMax, IM_COL32(64, 69, 112, 255), 0.0f, 0, 2.0f);
+            genericWrapper();
+            logWrapper();
           }
           ImGui::SameLine();
+          imageWrapper(io);
 
-          static ImVec2 cursorPos;
-
-          float modif = 1.0 - (uiUtils->secondaryTexture != nullptr) * 0.5;
-          if (uiUtils->textureWidth > 0 && uiUtils->textureHeight > 0) {
-            float aspectRatio =
-                (float)uiUtils->textureWidth / (float)uiUtils->textureHeight;
-            auto scale = std::min<float>((ImGui::GetContentRegionAvail().y) *
-                                             modif / uiUtils->textureHeight,
-                                         (ImGui::GetContentRegionAvail().x) /
-                                             uiUtils->textureWidth);
-            auto texWidth = uiUtils->textureWidth * scale;
-            auto texHeight = uiUtils->textureHeight * scale;
-
-            // Handle zooming
-            if (io.KeyCtrl) {
-              zoom += io.MouseWheel * 0.1f;
-            }
-
-            // Create a child window for the image
-            ImGui::BeginChild("ImageContainer", ImVec2(0, 0), false,
-                              ImGuiWindowFlags_HorizontalScrollbar |
-                                  ImGuiWindowFlags_AlwaysVerticalScrollbar);
-            {
-              ImGui::BeginChild("Image", ImVec2(texWidth, texHeight), false,
-                                ImGuiWindowFlags_HorizontalScrollbar |
-                                    ImGuiWindowFlags_AlwaysVerticalScrollbar);
-              if (uiUtils->primaryTexture != nullptr) {
-                ImGui::Image(
-                    (void *)uiUtils->primaryTexture,
-                    ImVec2(texWidth * zoom * 0.98, texHeight * zoom * 0.98));
-                if (io.KeyCtrl && io.MouseWheel) {
-                  // Get the mouse position relative to the image
-                  ImVec2 mouse_pos = ImGui::GetMousePos();
-                  ImVec2 image_pos = ImGui::GetItemRectMin();
-                  auto itemsize = ImGui::GetItemRectSize();
-                  ImVec2 mouse_pos_relative = ImVec2(mouse_pos.x - image_pos.x,
-                                                     mouse_pos.y - image_pos.y);
-                  // Calculate the pixel position in the texture
-                  float pixel_x = ((mouse_pos_relative.x / itemsize.x));
-                  float pixel_y = ((mouse_pos_relative.y / itemsize.y));
-                  ImGui::SetScrollHereY(std::clamp(pixel_y, 0.0f, 1.0f));
-                  ImGui::SetScrollHereX(std::clamp(pixel_x, 0.0f, 1.0f));
-                }
-
-                // Handle dragging
-                if (io.KeyCtrl && ImGui::IsMouseDragging(0, 0.0f)) {
-                  ImVec2 drag_delta = ImGui::GetMouseDragDelta(0, 0.0f);
-                  ImGui::ResetMouseDragDelta(0);
-                  ImGui::SetScrollX(ImGui::GetScrollX() - drag_delta.x);
-                  ImGui::SetScrollY(ImGui::GetScrollY() - drag_delta.y);
-                }
-                if (!io.KeyCtrl) {
-                  uiUtils->imageClick(scale, io);
-                }
-              }
-              // End the child window
-              ImGui::EndChild();
-
-              ImGui::BeginChild("ImageSecondary", ImVec2(texWidth, texHeight),
-                                false,
-                                ImGuiWindowFlags_HorizontalScrollbar |
-                                    ImGuiWindowFlags_AlwaysVerticalScrollbar);
-              // images are less wide, on a usual 16x9 monitor, it is better
-              // to place them besides each other if (aspectRatio <= 2.0)
-              //  ImGui::SameLine();
-              if (uiUtils->secondaryTexture != nullptr) {
-                ImGui::Image((void *)uiUtils->secondaryTexture,
-                             ImVec2(uiUtils->textureWidth * scale * 0.98,
-                                    uiUtils->textureHeight * scale * 0.98));
-              }
-              ImGui::EndChild();
-            }
-            ImGui::EndChild();
-          }
           ImGui::End();
         }
 
@@ -389,12 +401,7 @@ int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
       }
     }
 
-    // Cleanup
-    uiUtils->shutdownImGui();
-
-    CleanupDeviceD3D();
-    ::DestroyWindow(hwnd);
-    ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    cleanup(hwnd, wc);
     return 0;
   } catch (std::exception e) {
     Fwg::Utils::Logging::logLine("Error in GUI startup: ", e.what());
@@ -402,15 +409,15 @@ int fwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-void fwgUI::disableBlock(const Fwg::Gfx::Bitmap &bitmap) {
+void FwgUI::disableBlock(const Fwg::Gfx::Bitmap &bitmap) {
   if (!bitmap.initialised())
     ImGui::BeginDisabled();
 }
-void fwgUI::reenableBlock(const Fwg::Gfx::Bitmap &bitmap) {
+void FwgUI::reenableBlock(const Fwg::Gfx::Bitmap &bitmap) {
   if (!bitmap.initialised())
     ImGui::EndDisabled();
 }
-void fwgUI::initAllowedInput(
+void FwgUI::initAllowedInput(
     Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
     std::vector<Terrain::ElevationType> &elevationTypes) {
   Fwg::Utils::Logging::logLine("Initialising allowed input");
@@ -426,7 +433,7 @@ void fwgUI::initAllowedInput(
   }
 };
 
-int fwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
+int FwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
   if (ImGui::BeginTabItem("Fwg config")) {
     // remove the images, and set pretext for them to be auto loaded after
     // switching tabs again
@@ -440,7 +447,7 @@ int fwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
   return 0;
 }
 // display cut configuration options
-int fwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::PushItemWidth(200.0f);
   ImGui::Checkbox("Cut from input", &cfg.cut);
   if (cfg.cut) {
@@ -463,7 +470,7 @@ int fwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::PopItemWidth();
   return 0;
 }
-int fwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
   ImGui::BeginChild("Log",
                     ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
@@ -516,7 +523,7 @@ int fwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return success;
 }
 
-int fwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
   if (ImGui::BeginTabItem("Land Tabs")) {
     uiUtils->tabSwitchEvent();
@@ -533,7 +540,7 @@ int fwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 static bool analyze = false;
 static int amountClassificationsNeeded = 0;
-int fwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Land Input")) {
     uiUtils->showHelpTextBox("Land");
     if (uiUtils->tabSwitchEvent()) {
@@ -577,7 +584,7 @@ int fwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static bool updateLayer = false;
   static int selectedLayer = 0;
   if (ImGui::BeginTabItem("Heightmap")) {
@@ -781,7 +788,7 @@ int fwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-void fwgUI::clearColours(Fwg::Gfx::Bitmap &image) {
+void FwgUI::clearColours(Fwg::Gfx::Bitmap &image) {
   static int severity = 0;
   // first count every colour in a colourTMap
   Utils::ColourTMap<std::vector<int>> colourCounter;
@@ -821,7 +828,7 @@ void fwgUI::clearColours(Fwg::Gfx::Bitmap &image) {
   //           }););
 }
 
-int fwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Normalmap")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
@@ -864,8 +871,13 @@ int fwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Climate Generation")) {
+    if (uiUtils->tabSwitchEvent()) {
+      // force update so sub-selected tabs get updated
+      uiUtils->setForceUpdate();
+      uiUtils->resetTexture();
+    }
     uiUtils->showHelpTextBox("Climate");
 
     ImGui::PushItemWidth(200.0f);
@@ -934,7 +946,7 @@ int fwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
   if (ImGui::BeginTabItem("Climate Input")) {
     static bool analyze = false;
@@ -1002,12 +1014,12 @@ int fwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 };
 
-int fwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Temperature")) {
     if (uiUtils->tabSwitchEvent()) {
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayTemperature(fwg.climateData));
-      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
     }
     uiUtils->showHelpTextBox("Temperature");
 
@@ -1035,7 +1047,7 @@ int fwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   return 0;
 }
-int fwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Humidity")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0,
@@ -1072,7 +1084,7 @@ int fwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Rivers")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Gfx::riverMap(fwg.terrainData.detailedHeightMap,
@@ -1087,9 +1099,9 @@ int fwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (ImGui::Button("Generate River Map")) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         fwg.genRivers(cfg);
+        uiUtils->resetTexture();
         return true;
       });
-      uiUtils->resetTexture();
     }
 
     // drag event
@@ -1107,7 +1119,7 @@ int fwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Climate")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
@@ -1173,7 +1185,7 @@ int fwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Trees")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
@@ -1212,7 +1224,7 @@ int fwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Wasteland")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, fwg.worldMap);
@@ -1238,7 +1250,7 @@ int fwgUI::showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
   if (ImGui::BeginTabItem("Areas")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -1259,7 +1271,7 @@ int fwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   return 0;
 }
-int fwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Density")) {
     if (uiUtils->tabSwitchEvent()) {
       // pre-create density map, if not existing yet, so users see the default
@@ -1282,7 +1294,6 @@ int fwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           uiUtils->resetTexture(0);
           return true;
         });
-        uiUtils->resetTexture();
       }
       if (triggeredDrag) {
         fwg.loadHabitability(
@@ -1299,7 +1310,7 @@ int fwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-void fwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("SuperSegments")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Fwg::Gfx::Segments::displaySuperSegments(
@@ -1320,10 +1331,13 @@ void fwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::PopItemWidth();
     if (fwg.climateData.climates.size()) {
       if (triggeredDrag) {
-        triggeredDrag = false;
-        fwg.loadSuperSegments(
-            cfg, Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          triggeredDrag = false;
+          fwg.loadSuperSegments(
+              cfg, Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+          uiUtils->resetTexture();
+          return true;
+        });
       }
     }
 
@@ -1331,7 +1345,7 @@ void fwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-void fwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static auto lastEvent = std::chrono::high_resolution_clock::now();
 
   if (ImGui::BeginTabItem("Segments")) {
@@ -1373,19 +1387,22 @@ void fwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       // Button to generate segments
       if (ImGui::Button("Generate Segments")) {
 
-        computationFutureBool = runAsync([&fwg, &cfg]() {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genSegments(cfg);
+          uiUtils->resetTexture();
           return true;
         });
-        uiUtils->resetTexture();
       }
       if (triggeredDrag) {
-        fwg.loadSegments(cfg,
-                         Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
-        fwg.segmentMap =
-            Fwg::Gfx::Segments::displaySegments(fwg.areaData.segments);
-        triggeredDrag = false;
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.loadSegments(cfg,
+                           Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+          fwg.segmentMap =
+              Fwg::Gfx::Segments::displaySegments(fwg.areaData.segments);
+          triggeredDrag = false;
+          uiUtils->resetTexture();
+          return true;
+        });
       }
     }
 
@@ -1393,7 +1410,7 @@ void fwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-int fwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static auto lastEvent = std::chrono::high_resolution_clock::now();
   if (ImGui::BeginTabItem("Provinces")) {
     // check if 50ms have passed since last event
@@ -1427,14 +1444,14 @@ int fwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                   static_cast<int>(fwg.areaData.provinces.size()));
       if (ImGui::Button("Generate Provinces Map")) {
         cfg.calcAreaParameters();
-        computationFutureBool = runAsync([&fwg, &cfg]() {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
           if (!fwg.genProvinces()) {
             return false;
           }
+          uiUtils->resetTexture();
           return true;
         });
         // redoRegions = true;
-        uiUtils->resetTexture();
       }
       if (triggeredDrag) {
         triggeredDrag = false;
@@ -1451,7 +1468,7 @@ int fwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Regions")) {
     uiUtils->tabSwitchEvent();
     uiUtils->showHelpTextBox("Regions");
@@ -1463,10 +1480,12 @@ int fwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       ImGui::SeparatorText("Generate a region map");
 
       if (ImGui::Button("Generate Region Map from Segments and Provinces")) {
-        computationFutureBool =
-            runAsync(&Fwg::FastWorldGenerator::genRegions, fwg, cfg);
-        redoRegions = false;
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genRegions(cfg);
+          redoRegions = false;
+          uiUtils->resetTexture();
+          return true;
+        });
       }
       ImGui::Text("The map has %i regions",
                   static_cast<int>(fwg.areaData.regions.size()));
@@ -1494,7 +1513,7 @@ int fwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int fwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Continents")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0,
@@ -1509,11 +1528,11 @@ int fwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (fwg.areaData.landBodies.size() && fwg.areaData.provinces.size()) {
       if (ImGui::Button("Generate Continents") ||
           (fwg.areaData.continents.empty() && !computationRunning)) {
-        computationFutureBool = runAsync([&fwg, &cfg]() {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genContinents(cfg);
+          uiUtils->resetTexture();
           return true;
         });
-        uiUtils->resetTexture();
       }
       // drag event
       if (triggeredDrag) {
@@ -1535,7 +1554,7 @@ int fwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-void fwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Civilisation")) {
     if (uiUtils->tabSwitchEvent()) {
       // force update so sub-selected tabs get updated
@@ -1547,9 +1566,11 @@ void fwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         fwg.areaData.continents.size()) {
       ImGui::SeparatorText("Generate all civ data automatically");
       if (ImGui::Button("Generate civilisation data")) {
-        computationFutureBool =
-            runAsync(&Fwg::FastWorldGenerator::genCivData, fwg, cfg);
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genCivData(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
       }
       ImGui::PushItemWidth(200.0f);
       ImGui::InputDouble("<--Development influence on population and city size",
@@ -1579,7 +1600,7 @@ void fwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-void fwgUI::showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static bool drawingMode = false;
   if (ImGui::BeginTabItem("Development")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -1611,9 +1632,9 @@ void fwgUI::showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (ImGui::Button("Generate Development")) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genDevelopment(cfg);
+          uiUtils->resetTexture();
           return true;
         });
-        uiUtils->resetTexture();
       }
       // ImGui::Checkbox("Draw mode", &drawingMode);
       ImGui::PopItemWidth();
@@ -1661,7 +1682,7 @@ void fwgUI::showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-void fwgUI::showPopulationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showPopulationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Population")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Gfx::displayPopulation(fwg.areaData.provinces));
@@ -1717,7 +1738,7 @@ void fwgUI::showPopulationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::EndTabItem();
   }
 }
-void fwgUI::showLocationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showLocationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
   if (ImGui::BeginTabItem("Locations")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -1750,7 +1771,7 @@ void fwgUI::showLocationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-void fwgUI::showNavmeshTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showNavmeshTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Navmesh")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Fwg::Gfx::displayConnections(fwg.areaData.regions,
@@ -1776,7 +1797,7 @@ void fwgUI::showNavmeshTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-void fwgUI::showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Cities")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0,
@@ -1786,9 +1807,11 @@ void fwgUI::showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (fwg.provinceMap.initialised()) {
 
       if (ImGui::Button("Generate Cities")) {
-        computationFutureBool =
-            runAsync(&Fwg::FastWorldGenerator::genUrbanisation, fwg, cfg);
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genUrbanisation(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
       }
       ImGui::SeparatorText(
           "Drag and drop in an image of the correct resolution to set the "
@@ -1834,7 +1857,7 @@ void fwgUI::showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::EndTabItem();
   }
 }
-void fwgUI::showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Agriculture")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
@@ -1843,9 +1866,11 @@ void fwgUI::showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     if (fwg.provinceMap.initialised()) {
       if (ImGui::Button("Generate Agriculture")) {
-        computationFutureBool =
-            runAsync(&Fwg::FastWorldGenerator::genAgriculture, fwg, cfg);
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genAgriculture(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
       }
       ImGui::SeparatorText(
           "Drag and drop in an image of the correct resolution to set the "
@@ -1894,7 +1919,7 @@ void fwgUI::showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 // Helper functions
 
-bool fwgUI::CreateDeviceD3D(HWND hWnd) {
+bool FwgUI::CreateDeviceD3D(HWND hWnd) {
   // Setup swap chain
   DXGI_SWAP_CHAIN_DESC sd;
   ZeroMemory(&sd, sizeof(sd));
@@ -1936,7 +1961,7 @@ bool fwgUI::CreateDeviceD3D(HWND hWnd) {
   return true;
 }
 
-void fwgUI::CleanupDeviceD3D() {
+void FwgUI::CleanupDeviceD3D() {
   CleanupRenderTarget();
   if (g_pSwapChain) {
     g_pSwapChain->Release();
@@ -1949,7 +1974,7 @@ void fwgUI::CleanupDeviceD3D() {
   uiUtils->cleanupDirect3DDevice(g_pd3dDevice);
 }
 
-void fwgUI::CreateRenderTarget() {
+void FwgUI::CreateRenderTarget() {
   ID3D11Texture2D *pBackBuffer;
   g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
   if (pBackBuffer != nullptr) {
@@ -1961,7 +1986,7 @@ void fwgUI::CreateRenderTarget() {
   }
 }
 
-void fwgUI::CleanupRenderTarget() {
+void FwgUI::CleanupRenderTarget() {
   if (g_mainRenderTargetView) {
     g_mainRenderTargetView->Release();
     g_mainRenderTargetView = nullptr;
