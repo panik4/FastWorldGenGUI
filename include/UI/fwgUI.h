@@ -9,6 +9,7 @@
 #include <string>
 #include <tchar.h>
 #include <thread>
+#include <variant>
 #include <vector>
 
 namespace Fwg {
@@ -29,6 +30,9 @@ protected:
     worldGenerationView = true;
     return std::async(std::launch::async, func, std::ref(args)...);
   }
+
+
+
   std::atomic<bool> computationRunning;
   std::atomic<bool> computationStarted;
   std::future<void> computationFuture;
@@ -128,14 +132,13 @@ public:
   WNDCLASSEXW initializeWindowClass();
   bool initializeGraphics(HWND hwnd);
   void initializeImGui(HWND hwnd);
-  void genericWrapper();
+  void genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void logWrapper();
   void imageWrapper(ImGuiIO &io);
   int init(Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void initDraggingPoll(bool &done);
   void defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg);
   void computationRunningCheck();
-  HWND createMainWindow(const WNDCLASSEXW &wc);
   void cleanup(HWND hwnd, const WNDCLASSEXW &wc);
   int shiny(Fwg::FastWorldGenerator &fwg);
 };

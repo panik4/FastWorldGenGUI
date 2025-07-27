@@ -67,7 +67,8 @@ WNDCLASSEXW FwgUI::initializeWindowClass() {
                     nullptr};
 
   HICON hIcon = (HICON)LoadImage(
-      NULL, (Cfg::Values().workingDirectory + "//worldMap.ico").c_str(),
+      NULL,
+      (Cfg::Values().workingDirectory + "//resources//worldMap.ico").c_str(),
       IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
   if (hIcon) {
     wc.hIcon = hIcon;
@@ -93,7 +94,7 @@ void FwgUI::initializeImGui(HWND hwnd) {
   ImGui::StyleColorsDark();
   uiUtils->setupImGuiBackends(hwnd, g_pd3dDevice, g_pd3dDeviceContext);
 }
-void FwgUI::genericWrapper() {
+void FwgUI::genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
 
@@ -103,7 +104,7 @@ void FwgUI::genericWrapper() {
             ImGui::GetContentRegionAvail().x * 1.0f,
             std::max<float>(ImGui::GetContentRegionAvail().y * 0.3f, 100.0f)),
         false, ImGuiWindowFlags_None);
-
+    showGeneric(cfg, fwg);
     ImGui::EndChild();
     // Draw a frame around the child region
     ImVec2 childMin = ImGui::GetItemRectMin();
@@ -384,7 +385,7 @@ int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
                                                   IM_COL32(100, 90, 180, 255),
                                                   0.0f, 0, 2.0f);
             }
-            genericWrapper();
+            genericWrapper(cfg, fwg);
             logWrapper();
           }
           ImGui::SameLine();
@@ -471,18 +472,6 @@ int FwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  ImGuiWindowFlags window_flags = ImGuiWindowFlags_HorizontalScrollbar;
-  ImGui::BeginChild("Log",
-                    ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
-                           ImGui::GetContentRegionAvail().y * 0.1),
-                    false, window_flags);
-  ImGui::TextUnformatted(log->str().c_str());
-  bool success = true;
-  if (!ImGui::IsWindowHovered()) {
-    // scroll to bottom
-    ImGui::SetScrollHereY(1.0f);
-  }
-  ImGui::EndChild();
   ImGui::PushItemWidth(200.0f);
   uiUtils->brushSettingsHeader();
   if (ImGui::InputInt("<--Seed", &cfg.seed)) {
@@ -520,7 +509,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         runAsyncInitialDisable(&Fwg::FastWorldGenerator::generateWorld, fwg);
   }
   ImGui::PopItemWidth();
-  return success;
+  return true;
 }
 
 int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
@@ -545,6 +534,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("Land");
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, landUI.landInput);
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
     }
 
     if (ImGui::Checkbox("<--Classify land input", &cfg.complexLandInput)) {
@@ -953,6 +943,7 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     static int amountClassificationsNeeded = 0;
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, climateUI.climateInputMap);
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
     }
     ImGui::SeparatorText("This step is OPTIONAL! You can also generate a "
                          "random climate in the next tab");
@@ -1017,9 +1008,9 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Temperature")) {
     if (uiUtils->tabSwitchEvent()) {
-      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayTemperature(fwg.climateData));
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
     }
     uiUtils->showHelpTextBox("Temperature");
 
@@ -1190,7 +1181,8 @@ int FwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayClimate(fwg.climateData, true));
-      uiUtils->updateImage(1, fwg.worldMap);
+      uiUtils->updateImage(
+          1, Fwg::Gfx::Climate::displayTreeDensity(fwg.climateData));
     }
     uiUtils->showHelpTextBox("Trees");
 
@@ -1862,7 +1854,7 @@ void FwgUI::showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::displayAgriculture(fwg.worldMap, fwg.civLayer));
-      uiUtils->updateImage(1, fwg.regionMap);
+      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
     }
     if (fwg.provinceMap.initialised()) {
       if (ImGui::Button("Generate Agriculture")) {
