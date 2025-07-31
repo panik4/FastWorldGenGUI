@@ -217,8 +217,8 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
 }
 
 int FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  this->uiUtils->loadHelpTextsFromFile(Fwg::Cfg::Values().resourcePath +
-                                       "uiHelpTexts.txt");
+  this->uiUtils->loadHelpTextsFromFile(Fwg::Cfg::Values().resourcePath);
+  this->uiUtils->loadHelpImagesFromPath(Fwg::Cfg::Values().resourcePath);
   uiUtils->setClickOffsets(cfg.width, 1);
   frequency = cfg.overallFrequencyModifier;
   log = std::make_shared<std::stringstream>();
@@ -473,7 +473,7 @@ int FwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::PushItemWidth(200.0f);
-  uiUtils->brushSettingsHeader();
+  //uiUtils->brushSettingsHeader();
   if (ImGui::InputInt("<--Seed", &cfg.seed)) {
     cfg.randomSeed = false;
     cfg.reRandomize();
@@ -492,7 +492,6 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     fwg.resetData();
     Fwg::Utils::Logging::logLine(fwg.size());
   }
-  ImGui::SameLine();
   if (ImGui::Button(("Save current image to " + cfg.mapsPath).c_str())) {
     writeCurrentlyDisplayedImage(cfg);
   }
@@ -531,11 +530,11 @@ static bool analyze = false;
 static int amountClassificationsNeeded = 0;
 int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Land Input")) {
-    uiUtils->showHelpTextBox("Land");
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, landUI.landInput);
       uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
     }
+    uiUtils->showHelpTextBox("Land");
 
     if (ImGui::Checkbox("<--Classify land input", &cfg.complexLandInput)) {
       if (cfg.complexLandInput) {
@@ -580,7 +579,8 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Heightmap")) {
     if (uiUtils->tabSwitchEvent()) {
       if (fwg.terrainData.detailedHeightMap.size()) {
-        uiUtils->updateImage(0, Fwg::Gfx::simpleLandMap(fwg.terrainData));
+        uiUtils->updateImage(
+            0, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
         // wrap around because we want to show two images
         if (updateLayer) {
           if (selectedLayer < fwg.layerData.size() &&
@@ -592,7 +592,10 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           }
           updateLayer = false;
         } else {
-          uiUtils->updateImage(1, Fwg::Gfx::landMap(fwg.terrainData));
+          if (fwg.terrainData.landMap.size()) {
+            uiUtils->updateImage(1, Fwg::Gfx::landMap(fwg.terrainData));
+          } else {
+          }
         }
       }
     }

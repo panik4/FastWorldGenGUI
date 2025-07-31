@@ -40,7 +40,9 @@ void UIUtils::imageClick(float scale, ImGuiIO &io) {
 
     // If click events are being processed, add this event to the queue
     if (processClickEventsEnabled()) {
-      clickEvents.push({pixelIndex, interactionType});
+      if (clickEvents.size() < 1) {
+        clickEvents.push({pixelIndex, interactionType});
+      }
     }
   }
 }
@@ -86,9 +88,9 @@ void UIUtils::brushSettingsHeader() {
   ImGui::SameLine();
   ImGui::SliderFloat("<--Brush strength", &brushStrength, 0.0f, 1.0f);
   ImGui::SameLine();
-  showHelpTextBox("Drawing");
-  // ImGui::SameLine();
-  // ImGui::SliderFloat("<--Brush hardness", &brushHardness, 0.0f, 1.0f);
+  // showHelpTextBox("Drawing");
+  //  ImGui::SameLine();
+  //  ImGui::SliderFloat("<--Brush hardness", &brushHardness, 0.0f, 1.0f);
   if (update) {
     setClickOffsets(cfg.width, brushSize);
     // for (int i = 0; i < clickOffsets.size(); i++) {
@@ -137,12 +139,11 @@ void UIUtils::updateImage(int index, const Fwg::Gfx::Bitmap &image) {
   auto &texture = (index == 0) ? primaryTexture : secondaryTexture;
   auto &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
 
-  Fwg::Utils::Logging::logLine(
-      "UIUtils::updateImage: Updating image at index " + std::to_string(index) +
-      " with size: " + std::to_string(image.size()));
+  // Fwg::Utils::Logging::logLine(
+  //     "UIUtils::updateImage: Updating image at index " +
+  //     std::to_string(index) + " with size: " + std::to_string(image.size()));
   freeTexture(&texture);
   updateFlag = false;
-
 
   const size_t expectedSize = textureWidth * textureHeight;
   if (image.initialised() && image.imageData.size()) {
@@ -301,12 +302,56 @@ void Elements::borderChild(const std::string &label,
 // Loads texts containing information for users from a file
 void UIUtils::loadHelpTextsFromFile(const std::string &filePath) {
   Fwg::Utils::Logging::logLine("Loading help texts from ", filePath);
-  auto lines = Fwg::Parsing::getLines(filePath);
+  auto lines = Fwg::Parsing::getLines(filePath + "//uiHelpTexts.txt");
   for (auto &line : lines) {
     auto tokens = Fwg::Parsing::getTokens(line, '|');
     helpTexts[tokens[0]].append(tokens[0]);
     for (auto i = 1; i < tokens.size(); i++) {
       helpTexts[tokens[0]].append("\n" + tokens[i]);
+    }
+  }
+
+  for (const auto &entry :
+       std::filesystem::directory_iterator(filePath + "//uiHelpTexts//")) {
+    if (entry.is_directory()) {
+      continue; // Skip directories
+    }
+    lines = Fwg::Parsing::getLines(entry.path().string());
+    auto text = Fwg::Parsing::readFile(entry.path().string());
+    auto filename = entry.path().filename().string();
+    // remove the extension
+    filename = filename.substr(0, filename.find_last_of('.'));
+    advancedHelpTexts[filename] = text;
+    // for (auto &line : lines) {
+    //   auto tokens = Fwg::Parsing::getTokens(line, '|');
+    //   advancedHelpTexts[filename][tokens[0]].append(tokens[0]);
+    //   for (auto i = 1; i < tokens.size(); i++) {
+    //     advancedHelpTexts[filename][tokens[0]].append("\n" + tokens[i]);
+    //   }
+    // }
+  }
+}
+void UIUtils::loadHelpImagesFromPath(const std::string &path) {
+  auto imageDirectory = path + "//uiHelpImages//";
+
+  for (const auto &entry :
+       std::filesystem::directory_iterator(imageDirectory)) {
+    if (entry.is_directory()) {
+      continue; // Skip directories
+    }
+    // get the filename without extension
+    auto filename = entry.path().filename().string();
+    // remove the extension
+    filename = filename.substr(0, filename.find_last_of('.'));
+    auto image = Fwg::Gfx::Png::load(entry.path().string());
+    auto texWidth = image.width();
+    auto texHeight = image.height();
+    ID3D11ShaderResourceView *texture = nullptr;
+    if (texWidth > 0 && texHeight > 0) {
+      getResourceView(image, &texture, &texWidth, &texHeight, device);
+      advancedHelpTextures[filename] = texture;
+      advancedHelpTexturesAspectRatio[filename] =
+          static_cast<float>(texHeight) / static_cast<float>(texWidth);
     }
   }
 }
@@ -315,9 +360,78 @@ void UIUtils::showHelpTextBox(const std::string &key) {
                     ImVec2(ImGui::GetContentRegionAvail().x,
                            ImGui::GetContentRegionAvail().y * 0.1f),
                     false);
+  activeKey = key;
+  if (ImGui::Button("Extended Help")) {
+    showExtendedHelp = !showExtendedHelp;
+  }
   // display help text in a text box
   if (helpTexts.find(key) != helpTexts.end()) {
     ImGui::TextWrapped("Help: %s", helpTexts[key].c_str());
   }
   ImGui::EndChild();
+  
 }
+
+
+void UIUtils::showAdvancedTextBox() {
+  auto key = activeKey;
+  if (showExtendedHelp &&
+      advancedHelpTexts.find(key) != advancedHelpTexts.end()) {
+    ImGui::PushStyleColor(
+        ImGuiCol_WindowBg,
+        ImVec4(0.2f, 0.1f, 0.0f, 1.0f)); // Custom dark blueish background
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 4.0f); // Thick border
+    ImGui::PushStyleColor(ImGuiCol_Border,
+                          ImVec4(0.9f, 0.6f, 0.1f, 1.0f)); // Border color
+    auto size = ImGui::GetMainViewport()->Size;
+    size.x *= 0.9f;
+    size.y *= 0.9f;
+
+    ImGui::SetNextWindowSize(size); // A bit smaller than current resolution
+    ImGui::Begin("Extended Help", &showExtendedHelp,
+                 ImGuiWindowFlags_NoCollapse);
+
+    ImGui::Text("Detailed Help Section");
+    if (ImGui::Button("Close Detailed Help Section")) {
+      showExtendedHelp = !showExtendedHelp;
+    }
+    ImGui::Separator();
+
+    // Scrollable region
+    ImGui::BeginChild("HelpScrollArea", ImVec2(0, 0), false,
+                      ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+    auto value = advancedHelpTexts[key];
+    // Display heading
+    ImGui::TextColored(ImVec4(1, 0.8f, 0.2f, 1.0f), "%s", key.c_str());
+
+    // Spacing
+    ImGui::Spacing();
+
+    float fullWidth = ImGui::GetContentRegionAvail().x;
+    float imageWidth = fullWidth * 0.4f; // 48% for padding
+    float textWidth = fullWidth * 0.6f;
+
+    // Start horizontal layout
+    ImGui::BeginGroup();
+    if (advancedHelpTextures.contains(key)) {
+      ImGui::Image(advancedHelpTextures[key],
+                   ImVec2(imageWidth,
+                          imageWidth * advancedHelpTexturesAspectRatio[key]));
+    }
+    ImGui::EndGroup();
+
+    ImGui::SameLine();
+
+    ImGui::BeginGroup();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + textWidth);
+    ImGui::TextUnformatted(value.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::EndGroup();
+
+    ImGui::Separator();
+    ImGui::End();            // Ends the "Extended Help" window
+    ImGui::PopStyleColor(2); // WindowBg + Border
+    ImGui::PopStyleVar();    // Border size
+  }
+  }

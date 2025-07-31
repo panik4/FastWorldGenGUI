@@ -25,8 +25,14 @@ private:
 
 public:
   std::map<std::string, std::string> helpTexts;
-  std::queue<ClickEvent> clickEvents;
+  std::map<std::string, std::string> advancedHelpTexts;
+  std::map<std::string, Fwg::Gfx::Bitmap> advancedHelpImages;
+  std::map<std::string, float> advancedHelpTexturesAspectRatio;
+  std::map<std::string, ID3D11ShaderResourceView *> advancedHelpTextures;
 
+  std::queue<ClickEvent> clickEvents;
+  bool showExtendedHelp = false;
+  std::string activeKey = "";
   ID3D11ShaderResourceView *primaryTexture = nullptr;
   ID3D11ShaderResourceView *secondaryTexture = nullptr;
   ID3D11Device *device = nullptr;
@@ -104,7 +110,9 @@ public:
                    const ImVec4 &clear_color, IDXGISwapChain *g_pSwapChain);
   void shutdownImGui();
   void loadHelpTextsFromFile(const std::string &filePath);
+  void loadHelpImagesFromPath(const std::string &filePath);
   void showHelpTextBox(const std::string &key);
+  void showAdvancedTextBox();
 };
 
 namespace Elements {
