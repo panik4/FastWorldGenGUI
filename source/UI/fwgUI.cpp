@@ -473,7 +473,7 @@ int FwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::PushItemWidth(200.0f);
-  //uiUtils->brushSettingsHeader();
+  // uiUtils->brushSettingsHeader();
   if (ImGui::InputInt("<--Seed", &cfg.seed)) {
     cfg.randomSeed = false;
     cfg.reRandomize();
@@ -579,8 +579,11 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (ImGui::BeginTabItem("Heightmap")) {
     if (uiUtils->tabSwitchEvent()) {
       if (fwg.terrainData.detailedHeightMap.size()) {
-        uiUtils->updateImage(
-            0, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
+        auto heightmap =
+            Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap);
+        uiUtils->updateImage(1, heightmap);
+        uiUtils->updateImage(0, heightmap);
+        uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
         // wrap around because we want to show two images
         if (updateLayer) {
           if (selectedLayer < fwg.layerData.size() &&
@@ -595,8 +598,13 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           if (fwg.terrainData.landMap.size()) {
             uiUtils->updateImage(1, Fwg::Gfx::landMap(fwg.terrainData));
           } else {
+            uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
           }
         }
+      } else {
+
+        uiUtils->updateImage(0, Fwg::Gfx::Bitmap());
+        uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
       }
     }
     static bool layeredit = false;
@@ -705,8 +713,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
     }
     ImGui::SeparatorText("Generate using buttons or drop in file");
-    std::string buttonText = cfg.cut ? "<--Cut from" : "Generate";
-    buttonText.append(" heightmap");
+    std::string buttonText = "Generate land shape";
     if (!cfg.complexLandInput && ImGui::Button(buttonText.c_str())) {
       // we have dragged in a terrain map before, if we generate, we just want
       // to generate with changed parameters
@@ -1180,14 +1187,14 @@ int FwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Trees")) {
+  if (ImGui::BeginTabItem("Forests")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayClimate(fwg.climateData, true));
       uiUtils->updateImage(
           1, Fwg::Gfx::Climate::displayTreeDensity(fwg.climateData));
     }
-    uiUtils->showHelpTextBox("Trees");
+    uiUtils->showHelpTextBox("Forests");
 
     ImGui::PushItemWidth(200.0f);
     ImGui::InputDouble("borealDensity", &cfg.borealDensity, 0.1);
