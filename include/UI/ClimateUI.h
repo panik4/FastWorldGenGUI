@@ -15,13 +15,14 @@ class ClimateUI {
     ImVec4 colour;
     std::vector<int> pixels;
   };
+  std::set<Fwg::Gfx::Colour> highlightedInputs;
 
 public:
-  void RenderScrollableArea(std::vector<Fwg::Gfx::Colour> &imageData);
+  bool RenderScrollableArea(std::vector<Fwg::Gfx::Colour> &imageData);
   bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                          const Fwg::Gfx::Bitmap &climateInput,
                          int &amountClassificationsNeeded);
-  void complexTerrainMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+  bool complexTerrainMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                              bool &analyze, int &amountClassificationsNeeded);
 
   Fwg::Gfx::Bitmap climateInputMap;

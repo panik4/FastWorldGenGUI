@@ -216,7 +216,7 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
   }
 }
 
-int FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   this->uiUtils->loadHelpTextsFromFile(Fwg::Cfg::Values().resourcePath);
   this->uiUtils->loadHelpImagesFromPath(Fwg::Cfg::Values().resourcePath);
   uiUtils->setClickOffsets(cfg.width, 1);
@@ -359,7 +359,7 @@ int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
                   "Different Steps of the generation, usually go "
                   "from left to right");
 
-              if (ImGui::BeginTabBar("Steps", ImGuiTabBarFlags_None)) {
+              if (UI::Elements::BeginMainTabBar("Steps")) {
                 // Disable all inputs if computation is running
                 if (computationRunning) {
                   ImGui::BeginDisabled();
@@ -372,7 +372,7 @@ int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
                 }
                 computationRunningCheck();
 
-                ImGui::EndTabBar();
+                UI::Elements::EndMainTabBar();
               }
 
               ImGui::PopStyleColor();
@@ -435,7 +435,7 @@ void FwgUI::initAllowedInput(
 };
 
 int FwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
-  if (ImGui::BeginTabItem("Fwg config")) {
+  if (UI::Elements::BeginSubTabItem("Fwg config")) {
     // remove the images, and set pretext for them to be auto loaded after
     // switching tabs again
     uiUtils->tabSwitchEvent();
@@ -474,7 +474,7 @@ int FwgUI::showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::PushItemWidth(200.0f);
   // uiUtils->brushSettingsHeader();
-  if (ImGui::InputInt("<--Seed", &cfg.seed)) {
+  if (ImGui::InputInt("<--Seed", &cfg.mapSeed)) {
     cfg.randomSeed = false;
     cfg.reRandomize();
   }
@@ -513,13 +513,13 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
-  if (ImGui::BeginTabItem("Land Tabs")) {
+  if (UI::Elements::BeginMainTabItem("Land Tabs")) {
     uiUtils->tabSwitchEvent();
-    if (ImGui::BeginTabBar("Land Tabs", ImGuiTabBarFlags_None)) {
+    if (UI::Elements::BeginSubTabBar("Land Tabs", 0.0f)) {
       showLandTab(cfg, fwg);
       showHeightmapTab(cfg, fwg);
       showNormalMapTab(cfg, fwg);
-      ImGui::EndTabBar();
+      UI::Elements::EndSubTabBar();
     }
     ImGui::EndTabItem();
   }
@@ -529,7 +529,7 @@ int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 static bool analyze = false;
 static int amountClassificationsNeeded = 0;
 int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Land Input")) {
+  if (UI::Elements::BeginSubTabItem("Land Input")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, landUI.landInput);
       uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
@@ -576,7 +576,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static bool updateLayer = false;
   static int selectedLayer = 0;
-  if (ImGui::BeginTabItem("Heightmap")) {
+  if (UI::Elements::BeginSubTabItem("Heightmap")) {
     if (uiUtils->tabSwitchEvent()) {
       if (fwg.terrainData.detailedHeightMap.size()) {
         auto heightmap =
@@ -609,13 +609,20 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     static bool layeredit = false;
     uiUtils->showHelpTextBox("Heightmap");
-    showCutCfg(cfg, fwg);
+    // showCutCfg(cfg, fwg);
     ImGui::PushItemWidth(100.0f);
     ImGui::SeparatorText(
         "Generate a simple overview of land area from heightmap "
         "or drop it in");
-    ImGui::Text("Sealevel: %d", cfg.seaLevel);
     if (!cfg.complexLandInput) {
+      // UI::Elements::LabeledInputInt("SeaLevel", cfg.seaLevel, 1, 10, 0, 255);
+      // UI::Elements::LabeledInputInt("SeaLevel", cfg.seaLevel, 1, 10, 0, 255);
+      // ImGui::SliderFloat("<--Landpercentage", &cfg.landPercentage,
+      // 0.00, 1.0); UI::Elements::LabeledInputInt("<--Height Adjustments",
+      //                              cfg.heightAdjustments, 1, 10, -255, 255);
+      // UI::Elements::LabeledInputFloat("<--Landlayer coastal distance factor",
+      //                                cfg.layerApplicationFactor, 0.01f, 0.1f,
+      //                                0.0f, 1.0f);
       ImGui::InputInt("<--SeaLevel", &cfg.seaLevel, 1, 10);
       ImGui::SliderFloat("<--Landpercentage", &cfg.landPercentage, 0.00, 1.0);
       ImGui::InputInt("<--Height Adjustments", &cfg.heightAdjustments);
@@ -762,15 +769,15 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         return true;
       });
     }
-    if (ImGui::Button("Generate everything from heightmap")) {
-      // run the generation async
-      computationFutureBool = runAsync([&fwg, this]() {
-        worldGenerationView = true;
-        fwg.generateRemaining();
-        worldGenerationView = false;
-        return true;
-      });
-    }
+    // if (ImGui::Button("Generate everything from heightmap")) {
+    //   // run the generation async
+    //   computationFutureBool = runAsync([&fwg, this]() {
+    //     worldGenerationView = true;
+    //     fwg.generateRemaining();
+    //     worldGenerationView = false;
+    //     return true;
+    //   });
+    // }
     if (amountClassificationsNeeded > 0 || analyze) {
       ImGui::EndDisabled();
     }
@@ -829,7 +836,7 @@ void FwgUI::clearColours(Fwg::Gfx::Bitmap &image) {
 }
 
 int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Normalmap")) {
+  if (UI::Elements::BeginSubTabItem("Normalmap")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::displaySobelMap(fwg.terrainData.sobelData));
@@ -872,7 +879,7 @@ int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Climate Generation")) {
+  if (UI::Elements::BeginMainTabItem("Climate Generation")) {
     if (uiUtils->tabSwitchEvent()) {
       // force update so sub-selected tabs get updated
       uiUtils->setForceUpdate();
@@ -908,7 +915,8 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (fwg.terrainData.landForms.size() > 0 &&
         fwg.terrainData.landForms.size() ==
             fwg.terrainData.detailedHeightMap.size() &&
-        ImGui::Button("Generate whole climate automatically")) {
+        UI::Elements::AutomationStepButton(
+            "Generate whole climate automatically")) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         fwg.genTemperatures(cfg);
         fwg.genHumidity(cfg);
@@ -924,18 +932,17 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::PopItemWidth();
     if (!fwg.terrainData.landForms.size()) {
 
-      ImGui::Text(
-          "Have a heightmap, land classification, normalmap and continent map "
-          "first");
+      ImGui::Text("Have a heightmap, land classification and normalmap "
+                  "first");
       ImGui::BeginDisabled();
     }
-    if (ImGui::BeginTabBar("Climate Generation")) {
+    if (UI::Elements::BeginSubTabBar("Climate Generation", 0.0f)) {
       showTemperatureMap(cfg, fwg);
       showHumidityTab(cfg, fwg);
       showRiverTab(cfg, fwg);
       showClimateTab(cfg, fwg);
       showTreeTab(cfg, fwg);
-      ImGui::EndTabBar();
+      UI::Elements::EndSubTabBar();
     }
 
     if (!fwg.terrainData.landForms.size()) {
@@ -948,7 +955,7 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
-  if (ImGui::BeginTabItem("Climate Input")) {
+  if (UI::Elements::BeginMainTabItem("Climate Input")) {
     static bool analyze = false;
     static int amountClassificationsNeeded = 0;
     if (uiUtils->tabSwitchEvent()) {
@@ -959,40 +966,46 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                          "random climate in the next tab");
     uiUtils->showHelpTextBox("Climate Input");
     if (triggeredDrag) {
-      // don't immediately generate from the input, instead allow to manually
-      // classify all present colours
-      climateUI.climateInputMap =
-          Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
-      // create a map from secondary colours to primary colours
-      Fwg::Utils::ColourTMap<Fwg::Climate::ClimateType> secondaryToPrimary;
-      for (auto &type : fwg.climateData.climateTypes) {
-        for (auto &secondary : type.secondaryColours) {
-          secondaryToPrimary.setValue(secondary, type);
-        }
-      }
-
-      // preprocess input to convert to primary colours where possible
-      for (auto &col : climateUI.climateInputMap.imageData) {
-        if (secondaryToPrimary.find(col)) {
-          col = secondaryToPrimary[col].primaryColour;
-        }
-      }
-
-      if (climateUI.climateInputMap.size() !=
-          fwg.terrainData.detailedHeightMap.size()) {
-        Utils::Logging::logLine("Climate input map size does not match height "
-                                "map size. Please ensure that the input map is "
-                                "the same size as the height map");
-        climateUI.climateInputMap.clear();
-      } else {
-        analyze = true;
-      }
       triggeredDrag = false;
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        // don't immediately generate from the input, instead allow to manually
+        // classify all present colours
+        climateUI.climateInputMap =
+            Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
+        // create a map from secondary colours to primary colours
+        Fwg::Utils::ColourTMap<Fwg::Climate::ClimateType> secondaryToPrimary;
+        for (auto &type : fwg.climateData.climateTypes) {
+          for (auto &secondary : type.secondaryColours) {
+            secondaryToPrimary.setValue(secondary, type);
+          }
+        }
+
+        // preprocess input to convert to primary colours where possible
+        for (auto &col : climateUI.climateInputMap.imageData) {
+          if (secondaryToPrimary.find(col)) {
+            col = secondaryToPrimary[col].primaryColour;
+          }
+        }
+
+        if (climateUI.climateInputMap.size() !=
+            fwg.terrainData.detailedHeightMap.size()) {
+          Utils::Logging::logLine(
+              "Climate input map size does not match height "
+              "map size. Please ensure that the input map is "
+              "the same size as the height map");
+          climateUI.climateInputMap.clear();
+        } else {
+          analyze = true;
+        }
+        uiUtils->resetTexture();
+        return true;
+      });
     }
     if (climateUI.climateInputMap.initialised()) {
-      climateUI.complexTerrainMapping(cfg, fwg, analyze,
-                                      amountClassificationsNeeded);
-      uiUtils->resetTexture();
+      if (climateUI.complexTerrainMapping(cfg, fwg, analyze,
+                                          amountClassificationsNeeded)) {
+        uiUtils->resetTexture();
+      }
     }
     // only allow this if classification has been done
     if (amountClassificationsNeeded > 0 || analyze) {
@@ -1000,11 +1013,14 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     if (!amountClassificationsNeeded && climateUI.climateInputMap.size() &&
         ImGui::Button("Generate from labeled climate")) {
-      cfg.complexClimateInput = true;
-      Fwg::Gfx::Bmp::save(climateUI.climateInputMap,
-                          cfg.mapsPath + "//classifiedClimateInput.bmp");
-      fwg.loadClimate(cfg, climateUI.climateInputMap);
-      uiUtils->resetTexture();
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        cfg.complexClimateInput = true;
+        Fwg::Gfx::Bmp::save(climateUI.climateInputMap,
+                            cfg.mapsPath + "//classifiedClimateInput.bmp");
+        fwg.loadClimate(cfg, climateUI.climateInputMap);
+        uiUtils->resetTexture();
+        return true;
+      });
     }
     if (amountClassificationsNeeded > 0 || analyze) {
       ImGui::EndDisabled();
@@ -1016,7 +1032,7 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 };
 
 int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Temperature")) {
+  if (UI::Elements::BeginSubTabItem("Temperature")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayTemperature(fwg.climateData));
@@ -1049,7 +1065,7 @@ int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Humidity")) {
+  if (UI::Elements::BeginSubTabItem("Humidity")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0,
                            Fwg::Gfx::Climate::displayHumidity(fwg.climateData));
@@ -1086,7 +1102,7 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Rivers")) {
+  if (UI::Elements::BeginSubTabItem("Rivers")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Gfx::riverMap(fwg.terrainData.detailedHeightMap,
                                             fwg.climateData.rivers));
@@ -1121,7 +1137,7 @@ int FwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Climate")) {
+  if (UI::Elements::BeginSubTabItem("Climate")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayClimate(fwg.climateData, false));
@@ -1187,7 +1203,7 @@ int FwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Forests")) {
+  if (UI::Elements::BeginSubTabItem("Forests")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayClimate(fwg.climateData, true));
@@ -1227,7 +1243,7 @@ int FwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Wasteland")) {
+  if (UI::Elements::BeginSubTabItem("Wasteland")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, fwg.worldMap);
       uiUtils->updateImage(1, fwg.worldMap);
@@ -1254,27 +1270,44 @@ int FwgUI::showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
-  if (ImGui::BeginTabItem("Areas")) {
+  if (UI::Elements::BeginMainTabItem("Areas")) {
     if (uiUtils->tabSwitchEvent()) {
       // force update so sub-selected tabs get updated
       uiUtils->setForceUpdate();
       uiUtils->resetTexture();
     }
-    if (ImGui::BeginTabBar("Area Tabs", ImGuiTabBarFlags_None)) {
+    //uiUtils->showHelpTextBox("Areas");
+    // Button to generate segments
+    if (fwg.climateData.size() && fwg.climateData.climates.size() &&
+        fwg.terrainData.landForms.size()) {
+      if (UI::Elements::AutomationStepButton(
+              "Generate all areas automatically")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genHabitability(cfg);
+          fwg.genSuperSegments(cfg);
+          fwg.genSegments(cfg);
+          fwg.genProvinces();
+          fwg.genContinents(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
+      }
+    }
+    if (UI::Elements::BeginSubTabBar("Area Tabs", 0.0f)) {
       showDensityTab(cfg, fwg);
       showSuperSegmentTab(cfg, fwg);
       showSegmentTab(cfg, fwg);
       showProvincesTab(cfg, fwg);
       showContinentTab(cfg, fwg);
       // showRegionTab(cfg, fwg, &primaryTexture);
-      ImGui::EndTabBar();
+      UI::Elements::EndSubTabBar();
     }
     ImGui::EndTabItem();
   }
   return 0;
 }
 int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Density")) {
+  if (UI::Elements::BeginSubTabItem("Density")) {
     if (uiUtils->tabSwitchEvent()) {
       // pre-create density map, if not existing yet, so users see the default
       // map and can then decide to overwrite (or change parameters)
@@ -1313,17 +1346,20 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("SuperSegments")) {
+  if (UI::Elements::BeginSubTabItem("SuperSegments")) {
     if (uiUtils->tabSwitchEvent()) {
-      uiUtils->updateImage(0, Fwg::Gfx::Segments::displaySuperSegments(
-                                  fwg.areaData.superSegments));
-      uiUtils->updateImage(1, fwg.worldMap);
+      if (fwg.worldMap.size()) {
+        uiUtils->updateImage(0, Fwg::Gfx::Segments::displaySuperSegments(
+                                    fwg.areaData.superSegments));
+        uiUtils->updateImage(1, fwg.errorMap);
+      }
     }
     uiUtils->showHelpTextBox("SuperSegments");
 
     ImGui::PushItemWidth(300.0f);
     if (ImGui::Button("Generate SuperSegments") ||
-        (fwg.areaData.superSegments.empty() && !computationRunning)) {
+        (fwg.climateData.habitabilities.size() == cfg.bitmapSize &&
+         fwg.areaData.superSegments.empty() && !computationRunning)) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         fwg.genSuperSegments(cfg);
         uiUtils->resetTexture();
@@ -1350,7 +1386,7 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static auto lastEvent = std::chrono::high_resolution_clock::now();
 
-  if (ImGui::BeginTabItem("Segments")) {
+  if (UI::Elements::BeginSubTabItem("Segments")) {
     // check if 50ms have passed since last event
     auto now = std::chrono::high_resolution_clock::now();
     auto duration =
@@ -1358,7 +1394,7 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (uiUtils->tabSwitchEvent() || duration.count() > 50) {
       lastEvent = now;
       uiUtils->updateImage(0, fwg.segmentMap);
-      uiUtils->updateImage(1, fwg.worldMap);
+      uiUtils->updateImage(1, fwg.errorMap);
     }
     uiUtils->showHelpTextBox("Segments");
 
@@ -1414,7 +1450,7 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static auto lastEvent = std::chrono::high_resolution_clock::now();
-  if (ImGui::BeginTabItem("Provinces")) {
+  if (UI::Elements::BeginSubTabItem("Provinces")) {
     // check if 50ms have passed since last event
     auto now = std::chrono::high_resolution_clock::now();
     auto duration =
@@ -1471,7 +1507,7 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Regions")) {
+  if (UI::Elements::BeginSubTabItem("Regions")) {
     uiUtils->tabSwitchEvent();
     uiUtils->showHelpTextBox("Regions");
 
@@ -1516,7 +1552,7 @@ int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Continents")) {
+  if (UI::Elements::BeginSubTabItem("Continents")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0,
                            Fwg::Gfx::simpleContinents(fwg.areaData.continents,
@@ -1557,7 +1593,7 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 void FwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Civilisation")) {
+  if (UI::Elements::BeginMainTabItem("Civilisation")) {
     if (uiUtils->tabSwitchEvent()) {
       // force update so sub-selected tabs get updated
       uiUtils->setForceUpdate();
@@ -1566,14 +1602,7 @@ void FwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("Civilisation");
     if (fwg.areaData.provinces.size() && fwg.areaData.regions.size() &&
         fwg.areaData.continents.size()) {
-      ImGui::SeparatorText("Generate all civ data automatically");
-      if (ImGui::Button("Generate civilisation data")) {
-        computationFutureBool = runAsync([&fwg, &cfg, this]() {
-          fwg.genCivData(cfg);
-          uiUtils->resetTexture();
-          return true;
-        });
-      }
+
       ImGui::PushItemWidth(200.0f);
       ImGui::InputDouble("<--Development influence on population and city size",
                          &cfg.developmentInfluence, 0.1);
@@ -1587,12 +1616,21 @@ void FwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       ImGui::InputDouble("<--Urbanisation factor", &cfg.urbanFactor, 0.1);
       ImGui::InputDouble("<--Agriculture factor", &cfg.agricultureFactor, 0.05);
       ImGui::PopItemWidth();
+      ImGui::SeparatorText("Generate all civ data automatically");
+      if (UI::Elements::AutomationStepButton(
+              "Generate all civilisation data automatically")) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genCivData(cfg);
+          uiUtils->resetTexture();
+          return true;
+        });
+      }
       ImGui::SeparatorText("Manually edit civ data");
-      if (ImGui::BeginTabBar("Civilisation stuff")) {
+      if (UI::Elements::BeginSubTabBar("Civilisation stuff")) {
         showDevelopmentTab(cfg, fwg);
         showPopulationTab(cfg, fwg);
         showLocationTab(cfg, fwg);
-        ImGui::EndTabBar();
+        UI::Elements::EndSubTabBar();
       }
     } else {
       ImGui::Text("Generate other maps first");
@@ -1604,7 +1642,7 @@ void FwgUI::showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 void FwgUI::showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static bool drawingMode = false;
-  if (ImGui::BeginTabItem("Development")) {
+  if (UI::Elements::BeginSubTabItem("Development")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Gfx::displayDevelopment(fwg.areaData.provinces));
       uiUtils->updateImage(1, fwg.worldMap);
@@ -1685,7 +1723,7 @@ void FwgUI::showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 void FwgUI::showPopulationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Population")) {
+  if (UI::Elements::BeginSubTabItem("Population")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Gfx::displayPopulation(fwg.areaData.provinces));
       uiUtils->updateImage(1, fwg.worldMap);
@@ -1742,7 +1780,7 @@ void FwgUI::showPopulationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 void FwgUI::showLocationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
-  if (ImGui::BeginTabItem("Locations")) {
+  if (UI::Elements::BeginSubTabItem("Locations")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Gfx::displayLocations(fwg.areaData.regions, fwg.worldMap));
@@ -1774,7 +1812,7 @@ void FwgUI::showLocationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 void FwgUI::showNavmeshTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Navmesh")) {
+  if (UI::Elements::BeginSubTabItem("Navmesh")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Fwg::Gfx::displayConnections(fwg.areaData.regions,
                                                            fwg.locationMap));
@@ -1800,7 +1838,7 @@ void FwgUI::showNavmeshTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 void FwgUI::showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Cities")) {
+  if (UI::Elements::BeginSubTabItem("Cities")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0,
                            Fwg::Gfx::displayUrban(fwg.worldMap, fwg.civLayer));
@@ -1860,7 +1898,7 @@ void FwgUI::showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 void FwgUI::showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (ImGui::BeginTabItem("Agriculture")) {
+  if (UI::Elements::BeginSubTabItem("Agriculture")) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::displayAgriculture(fwg.worldMap, fwg.civLayer));

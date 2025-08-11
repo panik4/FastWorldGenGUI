@@ -12,6 +12,7 @@ void LandUI::RenderScrollableLandInput(
                            ImGui::GetContentRegionAvail().y * 0.8),
                     false, ImGuiWindowFlags_HorizontalScrollbar);
   static Fwg::Gfx::Colour *selectedLabel;
+  static Fwg::Gfx::Colour selectedId;
 
   for (auto &input : landInputColours.getMap()) {
     ImGui::ColorEdit3("Selected Colour", (float *)&input.second.colour,
@@ -22,19 +23,18 @@ void LandUI::RenderScrollableLandInput(
     ImGui::Text(("Currently labeled as: " + input.second.rgbName).c_str());
     ImGui::SameLine();
 
-    std::string id = input.second.in.toString(); // Use something unique as key
-
     // Select button
-    if (ImGui::Button(("Select type for " + id).c_str())) {
+    if (ImGui::Button(
+            ("Select type for " + input.second.in.toString()).c_str())) {
       selectedLabel = &input.second.out;
-      highlightedInputs.insert(id); // Mark this item for highlight
+      selectedId = input.second.in;
       ImGui::OpenPopup("ClassificationPopup");
     }
 
     ImGui::SameLine();
 
     // Apply button - highlight if it was previously selected
-    if (highlightedInputs.contains(id)) {
+    if (highlightedInputs.contains(input.second.in)) {
       ImGui::PushStyleColor(ImGuiCol_Button,
                             ImVec4(1.0f, 0.2f, 0.2f, 1.0f)); // Red
       ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
@@ -43,16 +43,18 @@ void LandUI::RenderScrollableLandInput(
                             ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
     }
 
-    if (ImGui::Button(("Apply type for " + id).c_str())) {
+    if (ImGui::Button(
+            ("Apply type for " + input.second.in.toString()).c_str())) {
       for (auto &pix : input.second.pixels) {
         imageData[pix] = input.second.out;
       }
       uiUtils->resetTexture();
-      highlightedInputs.erase(id); // Remove highlight after applying
+      highlightedInputs.erase(
+          input.second.in); // Remove highlight after applying
       ImGui::PopStyleColor(3);
     }
 
-    if (highlightedInputs.contains(id)) {
+    if (highlightedInputs.contains(input.second.in)) {
       ImGui::PopStyleColor(3);
     }
   }
@@ -62,6 +64,7 @@ void LandUI::RenderScrollableLandInput(
     for (auto &internalType : allowedLandInputs.getMap()) {
       if (ImGui::Button(internalType.second.name.c_str())) {
         *selectedLabel = internalType.second.colour;
+        highlightedInputs.insert(selectedId);
       }
     }
     ImGui::EndPopup();
@@ -152,8 +155,18 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   RenderScrollableLandInput(landInput.imageData);
   if (highlightedInputs.size() > 0) {
     ImGui::Text("Before next analysis, apply all types");
-  }
-  else if (ImGui::Button("Analyze Input") || analyze) {
+    if (ImGui::Button("Apply all")) {
+      for (auto &input : landInputColours.getMap()) {
+        if (highlightedInputs.contains(input.second.in)) {
+          for (auto &pix : input.second.pixels) {
+            landInput.setColourAtIndex(pix, input.second.out);
+          }
+          highlightedInputs.erase(input.second.in);
+        }
+      }
+      uiUtils->resetTexture();
+    }
+  } else if (ImGui::Button("Analyze Input") || analyze) {
     // always reload the classified map from disk
     Fwg::Gfx::Bmp::save(landInput, cfg.mapsPath + "//classifiedLandInput.bmp");
     analyzeLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
@@ -173,11 +186,11 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     // don't immediately generate from the input, instead allow to manually
     // classify all present colours
     landInput = Fwg::IO::Reader::readGenericImage(draggedFile, cfg, false);
-    //if (!cfg.validateResolution(landInput.width(), landInput.height())) {
-    //  Utils::Logging::logLine("Invalid resolution for land input image");
-    //  landInput.clear();
-    //}
-    // save the landmap to classifiedLandInput.bmp
+    // if (!cfg.validateResolution(landInput.width(), landInput.height())) {
+    //   Utils::Logging::logLine("Invalid resolution for land input image");
+    //   landInput.clear();
+    // }
+    //  save the landmap to classifiedLandInput.bmp
     Fwg::Gfx::Bmp::save(landInput, cfg.mapsPath + "//classifiedLandInput.bmp");
   } else {
     fwg.resetData();

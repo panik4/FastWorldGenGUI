@@ -128,10 +128,8 @@ bool UIUtils::tabSwitchEvent(bool processClickEvents) {
   this->processClickEvents = processClickEvents;
   if (ImGui::IsMouseReleased(0) && ImGui::IsItemHovered()) {
     resetTexture();
-    enteredTab = true;
     return true;
   }
-  enteredTab = false;
   return updateTexture1 || updateTexture2;
 }
 
@@ -361,7 +359,7 @@ void UIUtils::showHelpTextBox(const std::string &key) {
                            ImGui::GetContentRegionAvail().y * 0.1f),
                     false);
   activeKey = key;
-  if (ImGui::Button("Extended Help")) {
+  if (UI::Elements::HelpButton("Extended Help")) {
     showExtendedHelp = !showExtendedHelp;
   }
   // display help text in a text box
@@ -369,9 +367,72 @@ void UIUtils::showHelpTextBox(const std::string &key) {
     ImGui::TextWrapped("Help: %s", helpTexts[key].c_str());
   }
   ImGui::EndChild();
-  
 }
 
+void RenderEmphasizedText(const std::string &text, float textWidth) {
+  ImGui::BeginGroup();
+  ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + textWidth);
+
+  size_t pos = 0;
+
+  while (pos < text.size()) {
+    // Find line end
+    size_t lineEnd = text.find('\n', pos);
+    std::string line = (lineEnd == std::string::npos)
+                           ? text.substr(pos)
+                           : text.substr(pos, lineEnd - pos);
+
+    size_t cursor = 0;
+    bool firstSegment = true;
+
+    while (cursor < line.size()) {
+      size_t startBold = line.find("**", cursor);
+
+      if (startBold != std::string::npos) {
+        if (startBold > cursor) {
+          std::string normalPart = line.substr(cursor, startBold - cursor);
+          if (!firstSegment)
+            ImGui::SameLine();
+          ImGui::TextUnformatted(normalPart.c_str());
+          firstSegment = false;
+        }
+
+        size_t endBold = line.find("**", startBold + 2);
+        if (endBold == std::string::npos) {
+          std::string remaining = line.substr(startBold);
+          if (!firstSegment)
+            ImGui::SameLine();
+          ImGui::TextUnformatted(remaining.c_str());
+          break;
+        }
+
+        std::string boldPart =
+            line.substr(startBold + 2, endBold - (startBold + 2));
+        if (!firstSegment)
+          ImGui::SameLine();
+        ImGui::SetWindowFontScale(1.3f);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.3f, 1.0f));
+        ImGui::TextUnformatted(boldPart.c_str());
+        ImGui::PopStyleColor();
+        ImGui::SetWindowFontScale(1.0f);
+        firstSegment = false;
+
+        cursor = endBold + 2;
+      } else {
+        std::string normalPart = line.substr(cursor);
+        if (!firstSegment)
+          ImGui::SameLine();
+        ImGui::TextUnformatted(normalPart.c_str());
+        break;
+      }
+    }
+
+    pos = (lineEnd == std::string::npos) ? text.size() : lineEnd + 1;
+  }
+
+  ImGui::PopTextWrapPos();
+  ImGui::EndGroup();
+}
 
 void UIUtils::showAdvancedTextBox() {
   auto key = activeKey;
@@ -425,7 +486,8 @@ void UIUtils::showAdvancedTextBox() {
 
     ImGui::BeginGroup();
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + textWidth);
-    ImGui::TextUnformatted(value.c_str());
+    RenderEmphasizedText(value, textWidth);
+    // ImGui::TextUnformatted(value.c_str());
     ImGui::PopTextWrapPos();
     ImGui::EndGroup();
 
@@ -434,4 +496,4 @@ void UIUtils::showAdvancedTextBox() {
     ImGui::PopStyleColor(2); // WindowBg + Border
     ImGui::PopStyleVar();    // Border size
   }
-  }
+}

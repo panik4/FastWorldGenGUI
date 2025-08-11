@@ -1,5 +1,6 @@
 #pragma once
 #include "FastWorldGenerator.h"
+#include "UI/UiElements.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
 #include "imgui.h"
@@ -13,7 +14,6 @@ struct ClickEvent {
 
 class UIUtils {
 private:
-  bool enteredTab = false;
   bool forceUpdate = false;
   bool processClickEvents = false;
   bool drawMode = false;
@@ -90,7 +90,6 @@ public:
     }
   }
 
-  bool enterTabEvent() { return enteredTab; }
   bool tabSwitchEvent(bool processClickEvents = false);
   void updateImage(int index, const Fwg::Gfx::Bitmap &image);
 

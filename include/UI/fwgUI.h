@@ -1,6 +1,7 @@
 #pragma once
 #include "ClimateUI.h"
 #include "FastWorldGenerator.h"
+#include "UI/UiElements.h"
 #include "landUI.h"
 #include <atomic>
 #include <d3d11.h>
@@ -135,7 +136,7 @@ public:
   void genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void logWrapper();
   void imageWrapper(ImGuiIO &io);
-  int init(Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+  void init(Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void initDraggingPoll(bool &done);
   void defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg);
   void computationRunningCheck();
