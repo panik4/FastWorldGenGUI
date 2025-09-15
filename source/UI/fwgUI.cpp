@@ -1493,7 +1493,6 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
       if (triggeredDrag) {
         triggeredDrag = false;
-        redoRegions = true;
         fwg.loadProvinces(cfg, draggedFile);
         uiUtils->resetTexture();
       }
@@ -1520,7 +1519,6 @@ int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (ImGui::Button("Generate Region Map from Segments and Provinces")) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genRegions(cfg);
-          redoRegions = false;
           uiUtils->resetTexture();
           return true;
         });
@@ -1533,7 +1531,6 @@ int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
             // fwg.loadRegions(cfg, draggedFile);
             Utils::Logging::logLine(
                 "If you want to load regions, do it in the segments tab.");
-            redoRegions = false;
           } catch (std::exception e) {
             Utils::Logging::logLine(
                 "Couldn't load regions, fix input or try again");

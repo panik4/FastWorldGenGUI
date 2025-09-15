@@ -59,7 +59,6 @@ protected:
   bool redoAreas = false;
   bool redoTrees = false;
   bool redoProvinces = false;
-  bool redoRegions = false;
 
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiUtils->activeImages[0].size() && uiUtils->activeImages[0].size()) {
