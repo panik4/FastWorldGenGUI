@@ -245,18 +245,18 @@ void LandUI::configureLandElevationFactors(Fwg::Cfg &cfg,
   if (cfg.complexLandInput) {
     ImGui::PushItemWidth(100.0f);
     ImGui::SeparatorText("Land Elevation Factors");
-    ImGui::InputDouble("Plains Factor", &cfg.plainsFactor, 0.01, 0.1);
-    ImGui::InputDouble("Low Hills Factor", &cfg.lowhillsFactor, 0.01, 1.0);
-    ImGui::InputDouble("Hills Factor", &cfg.hillsFactor, 0.02, 1.0);
-    ImGui::InputDouble("Mountains Factor", &cfg.mountainsFactor, 0.05, 1.0);
-    ImGui::InputDouble("Peaks Factor", &cfg.peaksFactor, 0.05, 1.0);
-    ImGui::InputDouble("Steep Peaks Factor", &cfg.steepPeaksFactor, 0.1, 1.0);
-    ImGui::InputDouble("Cliffs Factor", &cfg.cliffsFactor, 0.05, 1.0);
-    ImGui::InputDouble("Valley Factor", &cfg.valleyFactor, 0.01, 1.0);
-    ImGui::InputDouble("Highlands Factor", &cfg.highlandsFactor, 0.01, 1.0);
-    ImGui::InputDouble("Ocean Factor", &cfg.oceanFactor, 0.1, 1.0);
-    ImGui::InputDouble("Deep Ocean Factor", &cfg.deepOceanFactor, 0.1, 1.0);
-    ImGui::InputDouble("Lake Factor", &cfg.lakeFactor, 0.1, 1.0);
+    ImGui::InputFloat("Plains Factor", &cfg.plainsFactor, 0.01f, 0.1f);
+    ImGui::InputFloat("Low Hills Factor", &cfg.lowhillsFactor, 0.01f, 1.0f);
+    ImGui::InputFloat("Hills Factor", &cfg.hillsFactor, 0.02f, 1.0f);
+    ImGui::InputFloat("Mountains Factor", &cfg.mountainsFactor, 0.05f, 1.0f);
+    ImGui::InputFloat("Peaks Factor", &cfg.peaksFactor, 0.05f, 1.0f);
+    ImGui::InputFloat("Steep Peaks Factor", &cfg.steepPeaksFactor, 0.1f, 1.0f);
+    ImGui::InputFloat("Cliffs Factor", &cfg.cliffsFactor, 0.05f, 1.0f);
+    ImGui::InputFloat("Valley Factor", &cfg.valleyFactor, 0.01f, 1.0f);
+    ImGui::InputFloat("Highlands Factor", &cfg.highlandsFactor, 0.01f, 1.0f);
+    ImGui::InputFloat("Ocean Factor", &cfg.oceanFactor, 0.1f, 1.0f);
+    ImGui::InputFloat("Deep Ocean Factor", &cfg.deepOceanFactor, 0.1f, 1.0f);
+    ImGui::InputFloat("Lake Factor", &cfg.lakeFactor, 0.1f, 1.0f);
     ImGui::PopItemWidth();
   }
 }

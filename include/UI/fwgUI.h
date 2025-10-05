@@ -15,6 +15,7 @@
 
 namespace Fwg {
 
+
 class FwgUI {
 
 protected:
@@ -31,6 +32,7 @@ protected:
     worldGenerationView = true;
     return std::async(std::launch::async, func, std::ref(args)...);
   }
+
 
 
 
@@ -99,13 +101,7 @@ protected:
   int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void showCivilizationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void showDevelopmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void showPopulationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void showUrbanisationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void showAgricultureTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void showLocationTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void showNavmeshTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+
   // Data
   static ID3D11Device *g_pd3dDevice;
   static ID3D11DeviceContext *g_pd3dDeviceContext;

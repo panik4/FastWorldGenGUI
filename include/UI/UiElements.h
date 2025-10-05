@@ -111,8 +111,7 @@ public:
 
   static bool LabeledInputInt(const std::string &label, int &value,
                               int step = 1, int stepFast = 10,
-                              int min = INT_MIN, int max = INT_MAX,
-                              float labelWidth = 150.0f) {
+                              int min = INT_MIN, int max = INT_MAX) {
     bool changed = false;
 
     ImGui::PushID(label.c_str());
@@ -150,9 +149,7 @@ public:
     // Draw a frame rectangle around the label + input
     ImGui::GetWindowDrawList()->AddRect(
         frameStart, frameEnd,
-        ImGui::GetColorU32(ImGuiCol_Border), // Rounded corners (radius = 0)
-        0.0f,                                // Flags
-        1.0f                                 // Thickness
+        ImGui::GetColorU32(ImGuiCol_Border) // Rounded corners (radius = 0)
     );
 
     ImGui::PopID();
@@ -161,8 +158,7 @@ public:
 
   static bool LabeledInputFloat(const std::string &label, float &value,
                                 float step = 0.1f, float stepFast = 1.0f,
-                                float min = -FLT_MAX, float max = FLT_MAX,
-                                float labelWidth = 150.0f) {
+                                float min = -FLT_MAX, float max = FLT_MAX) {
     bool changed = false;
 
     ImGui::PushID(label.c_str());
@@ -187,8 +183,7 @@ public:
 
   static bool LabeledInputDouble(const std::string &label, double &value,
                                  double step = 0.1, double stepFast = 1.0,
-                                 double min = -DBL_MAX, double max = DBL_MAX,
-                                 float labelWidth = 150.0f) {
+                                 double min = -DBL_MAX, double max = DBL_MAX) {
     bool changed = false;
 
     ImGui::PushID(label.c_str());
