@@ -39,16 +39,24 @@ bool Elements::BeginSubTabBar(const std::string &label, float height) {
   return opened;
 }
 
-void Elements::EndSubTabBar() {
-  ImGui::EndTabBar();
-}
+void Elements::EndSubTabBar() { ImGui::EndTabBar(); }
 
-bool Elements::BeginMainTabItem(const std::string &label) {
+bool Elements::BeginMainTabItem(const std::string &label,
+                                const bool highlight) {
   // Colors for main navigation tabs
-    // 61, 66, 99
-  ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.25f, 0.27f, 0.45f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_TabHovered, ImVec4(0.35f, 0.37f, 0.55f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_TabActive, ImVec4(0.45f, 0.47f, 0.65f, 1.0f));
+  // 61, 66, 99
+  if (!highlight) {
+    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.25f, 0.27f, 0.45f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabHovered,
+                          ImVec4(0.35f, 0.37f, 0.55f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabActive,
+                          ImVec4(0.45f, 0.47f, 0.65f, 1.0f));
+  } else {
+    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(1.0f, 0.27f, 0.45f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabHovered,
+                          ImVec4(1.0f, 0.37f, 0.55f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabActive, ImVec4(1.0f, 0.47f, 0.65f, 1.0f));
+  }
 
   // Slightly larger padding to make them stand out
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(3, 6));
@@ -61,12 +69,21 @@ bool Elements::BeginMainTabItem(const std::string &label) {
   return opened;
 }
 
-bool Elements::BeginSubTabItem(const std::string &label) {
+bool Elements::BeginSubTabItem(const std::string &label, const bool highlight) {
   // Colors for secondary tabs — still visible but less loud
   // 88, 38, 173
-  ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.35f, 0.16f, 0.66f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_TabHovered, ImVec4(0.4f, 0.22f, 0.76f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_TabActive, ImVec4(0.45f, 0.28f, 0.86f, 1.0f));
+  if (!highlight) {
+    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.35f, 0.16f, 0.66f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabHovered,
+                          ImVec4(0.4f, 0.22f, 0.76f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabActive,
+                          ImVec4(0.45f, 0.28f, 0.86f, 1.0f));
+  } else {
+    ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(1.0f, 0.16f, 0.66f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabHovered,
+                          ImVec4(1.0f, 0.22f, 0.76f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TabActive, ImVec4(1.0f, 0.28f, 0.86f, 1.0f));
+  }
 
   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 8));
 

@@ -11,30 +11,114 @@ void LandUI::RenderScrollableLandInput(
                     ImVec2(ImGui::GetContentRegionAvail().x,
                            ImGui::GetContentRegionAvail().y * 0.8),
                     false, ImGuiWindowFlags_HorizontalScrollbar);
-  static Fwg::Gfx::Colour *selectedLabel;
+
+  // --- Selection state ---
+  static bool singularEdit = false;
+  static std::unordered_set<Fwg::Gfx::Colour> selectedInputs;
+  static std::optional<Fwg::Gfx::Colour> lastClickedInput;
+  static Fwg::Gfx::Colour *selectedLabel = nullptr;
   static Fwg::Gfx::Colour selectedId;
 
-  for (auto &input : landInputColours.getMap()) {
-    ImGui::ColorEdit3("Selected Colour", (float *)&input.second.colour,
-                      ImGuiColorEditFlags_NoInputs |
-                          ImGuiColorEditFlags_NoLabel |
-                          ImGuiColorEditFlags_HDR);
-    ImGui::SameLine();
-    ImGui::Text(("Currently labeled as: " + input.second.rgbName).c_str());
+  // --- Begin main loop over inputs ---
+  int index = 0;
+  std::vector<Fwg::Gfx::Colour>
+      colourOrder; // To map shift-range indices
+                   // --- Global apply-to-selected button ---
+  if (!selectedInputs.empty() && !singularEdit) {
+    ImGui::Separator();
+    ImGui::Text("Selected items: %zu", selectedInputs.size());
     ImGui::SameLine();
 
-    // Select button
-    if (ImGui::Button(
-            ("Select type for " + input.second.in.toString()).c_str())) {
-      selectedLabel = &input.second.out;
-      selectedId = input.second.in;
+    if (ImGui::Button("Classify selected")) {
       ImGui::OpenPopup("ClassificationPopup");
     }
 
     ImGui::SameLine();
 
-    // Apply button - highlight if it was previously selected
-    if (highlightedInputs.contains(input.second.in)) {
+    if (ImGui::Button("Apply type to all selected")) {
+      for (const auto &selId : selectedInputs) {
+        if (landInputColours.getMap().contains(selId)) {
+          auto &entry = landInputColours.getMap().at(selId);
+          for (auto &pix : entry.pixels)
+            imageData[pix] = entry.out;
+        }
+      }
+      uiUtils->resetTexture();
+      selectedInputs.clear();
+    }
+  }
+  for (auto &input : landInputColours.getMap()) {
+    colourOrder.push_back(input.second.in);
+    ++index;
+  }
+  std::sort(colourOrder.begin(), colourOrder.end(), Fwg::Gfx::colourSort);
+
+  // --- Iterate with index tracking ---
+  for (int i = 0; i < colourOrder.size(); ++i) {
+    auto &id = colourOrder[i];
+    auto &entry = landInputColours.getMap().at(id);
+    bool isSelected = selectedInputs.contains(entry.in);
+
+    // Colour preview
+    ImGui::ColorEdit3("##colourPreview", (float *)&entry.colour,
+                      ImGuiColorEditFlags_NoInputs |
+                          ImGuiColorEditFlags_NoLabel |
+                          ImGuiColorEditFlags_HDR);
+
+    ImGui::SameLine();
+    ImGui::Text("%s", ("Currently labeled as: " + entry.rgbName).c_str());
+    ImGui::SameLine();
+
+    // --- Selection button ---
+    if (isSelected)
+      ImGui::PushStyleColor(ImGuiCol_Button,
+                            ImVec4(0.3f, 0.6f, 1.0f, 1.0f)); // Blue tint
+
+    std::string buttonLabel = "Select type for " + entry.in.toString();
+    if (ImGui::Button(buttonLabel.c_str())) {
+      ImGuiIO &io = ImGui::GetIO();
+
+      if (io.KeyShift && lastClickedInput.has_value()) {
+        singularEdit = false;
+        // --- SHIFT: Select range ---
+        auto it1 = std::find(colourOrder.begin(), colourOrder.end(),
+                             *lastClickedInput);
+        auto it2 = std::find(colourOrder.begin(), colourOrder.end(), entry.in);
+        if (it1 != colourOrder.end() && it2 != colourOrder.end()) {
+          if (it1 > it2)
+            std::swap(it1, it2);
+          for (auto it = it1; it <= it2; ++it)
+            selectedInputs.insert(*it);
+        }
+      } else if (io.KeyCtrl) {
+        singularEdit = false;
+        // --- CTRL: Toggle single ---
+        if (selectedInputs.contains(entry.in))
+          selectedInputs.erase(entry.in);
+        else
+          selectedInputs.insert(entry.in);
+        lastClickedInput = entry.in;
+        // if we have fewer than 2 selected, go back to singular
+        if (selectedInputs.size() <= 1)
+          singularEdit = true;
+      } else {
+        // --- Regular click: single select ---
+        singularEdit = true;
+        selectedInputs.clear();
+        selectedInputs.insert(entry.in);
+        lastClickedInput = entry.in;
+        ImGui::OpenPopup("ClassificationPopup");
+      }
+    }
+
+    if (isSelected)
+      ImGui::PopStyleColor();
+
+    ImGui::SameLine();
+
+    // --- Highlighted entries ---
+    bool isHighlighted = highlightedInputs.contains(entry.in);
+    if (isHighlighted) {
       ImGui::PushStyleColor(ImGuiCol_Button,
                             ImVec4(1.0f, 0.2f, 0.2f, 1.0f)); // Red
       ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
@@ -43,28 +127,30 @@ void LandUI::RenderScrollableLandInput(
                             ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
     }
 
-    if (ImGui::Button(
-            ("Apply type for " + input.second.in.toString()).c_str())) {
-      for (auto &pix : input.second.pixels) {
-        imageData[pix] = input.second.out;
-      }
+    // --- Apply button (per item) ---
+    if (ImGui::Button(("Apply type for " + entry.in.toString()).c_str())) {
+      for (auto &pix : entry.pixels)
+        imageData[pix] = entry.out;
       uiUtils->resetTexture();
-      highlightedInputs.erase(
-          input.second.in); // Remove highlight after applying
-      ImGui::PopStyleColor(3);
+      highlightedInputs.erase(entry.in);
     }
 
-    if (highlightedInputs.contains(input.second.in)) {
+    if (isHighlighted)
       ImGui::PopStyleColor(3);
-    }
   }
 
+  // --- Classification Popup ---
   if (ImGui::BeginPopup("ClassificationPopup")) {
-    ImGui::SeparatorText("Classify the type of this land input colour");
+    ImGui::SeparatorText("Classify selected land input colours");
     for (auto &internalType : allowedLandInputs.getMap()) {
       if (ImGui::Button(internalType.second.name.c_str())) {
-        *selectedLabel = internalType.second.colour;
-        highlightedInputs.insert(selectedId);
+        for (const auto &selId : selectedInputs) {
+          auto &entry = landInputColours.getMap().at(selId);
+          entry.out = internalType.second.colour;
+          highlightedInputs.insert(selId);
+        }
+        selectedInputs.clear();
+        ImGui::CloseCurrentPopup();
       }
     }
     ImGui::EndPopup();

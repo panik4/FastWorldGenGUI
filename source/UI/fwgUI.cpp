@@ -498,15 +498,19 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   ImGui::SameLine();
   ImGui::InputInt("<--Debug level", &cfg.debugLevel);
-  if (ImGui::Button("Generate all world data")) {
+  if (ImGui::Button("Generate all fwg data")) {
     fwg.resetData();
     // reset this because now we randomly generate all data, so heightmap
     // modifications MUST be allowed again
     cfg.allowHeightmapModification = true;
 
     // run the generation async
-    computationFutureBool =
-        runAsyncInitialDisable(&Fwg::FastWorldGenerator::generateWorld, fwg);
+    computationFutureBool = runAsyncInitialDisable([&fwg, &cfg, this]() {
+      fwg.generateWorld();
+      uiUtils->resetTexture();
+      modifiedAreas = true;
+      return true;
+    });
   }
   ImGui::PopItemWidth();
   return true;
@@ -1284,6 +1288,7 @@ int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (UI::Elements::AutomationStepButton(
               "Generate all areas automatically")) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          modifiedAreas = true;
           fwg.genHabitability(cfg);
           fwg.genSuperSegments(cfg);
           fwg.genSegments(cfg);
@@ -1427,6 +1432,7 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (ImGui::Button("Generate Segments")) {
 
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          modifiedAreas = true;
           fwg.genSegments(cfg);
           uiUtils->resetTexture();
           return true;
@@ -1434,6 +1440,7 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
       if (triggeredDrag) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          modifiedAreas = true;
           fwg.loadSegments(cfg,
                            Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
           fwg.segmentMap =
@@ -1482,6 +1489,7 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       ImGui::Text("The map has %i provinces",
                   static_cast<int>(fwg.areaData.provinces.size()));
       if (ImGui::Button("Generate Provinces Map")) {
+        modifiedAreas = true;
         cfg.calcAreaParameters();
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           if (!fwg.genProvinces()) {
@@ -1493,6 +1501,7 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         // redoRegions = true;
       }
       if (triggeredDrag) {
+        modifiedAreas = true;
         triggeredDrag = false;
         fwg.loadProvinces(cfg, draggedFile);
         uiUtils->resetTexture();
@@ -1565,6 +1574,7 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (ImGui::Button("Generate Continents") ||
           (fwg.areaData.continents.empty() && !computationRunning)) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          modifiedAreas = true;
           fwg.genContinents(cfg);
           uiUtils->resetTexture();
           return true;
@@ -1572,6 +1582,7 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
       // drag event
       if (triggeredDrag) {
+        modifiedAreas = true;
         fwg.loadContinents(cfg,
                            Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
         triggeredDrag = false;

@@ -19,9 +19,10 @@ public:
   // End the SUB tab bar
   static void EndSubTabBar();
 
-  static bool BeginMainTabItem(const std::string &label);
+  static bool BeginMainTabItem(const std::string &label,
+                               const bool highlight = false);
 
-  static bool BeginSubTabItem(const std::string &label);
+  static bool BeginSubTabItem(const std::string &label, const bool highlight = false);
 
   // Stylized button (e.g., red = important)
   static bool Button(const std::string &label, bool emphasize = false,
