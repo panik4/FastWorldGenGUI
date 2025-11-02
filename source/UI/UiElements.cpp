@@ -16,8 +16,6 @@ bool Elements::BeginMainTabBar(const std::string &label) {
 
 void Elements::EndMainTabBar() {
   ImGui::EndTabBar();
-  ImGui::PopStyleVar(2);
-  ImGui::PopStyleColor(3);
 }
 
 bool Elements::BeginSubTabBar(const std::string &label, float height) {
