@@ -6,11 +6,11 @@ void UIUtils::imageClick(float scale, ImGuiIO &io) {
     return;
   }
   // Check if the mouse is clicked on the image
-  if (ImGui::IsItemHovered() &&
-      (ImGui::IsMouseDown(0) || ImGui::IsMouseDown(1))) {
+  if ((ImGui::IsItemHovered()  && ImGui::IsMouseReleased(0) ||
+       ImGui::IsMouseReleased(1))) {
     // Determine which mouse button was pressed
     auto pressedKey =
-        ImGui::IsMouseDown(0) ? ImGuiKey_MouseLeft : ImGuiKey_MouseRight;
+        ImGui::IsMouseReleased(0) ? ImGuiKey_MouseLeft : ImGuiKey_MouseRight;
 
     // Get the mouse position relative to the image
     ImVec2 mousePos = ImGui::GetMousePos();
@@ -31,9 +31,6 @@ void UIUtils::imageClick(float scale, ImGuiIO &io) {
     auto interactionType = pressedKey == ImGuiKey_MouseLeft
                                ? InteractionType::CLICK
                                : InteractionType::RCLICK;
-    if (io.KeyCtrl) {
-      interactionType = InteractionType::DRAG;
-    }
 
     // Calculate the index of the pixel in the texture data
     int pixelIndex = (pixelY * activeImages[0].width() + pixelX);
@@ -290,7 +287,7 @@ void UIUtils::shutdownImGui() {
 void Elements::borderChild(const std::string &label,
                            const std::function<void()> &guiCalls) {
   {
-    ::ImGui::BeginChild(label.c_str(), ImVec2(0, 150),
+    ::ImGui::BeginChild(label.c_str(), ImVec2(400, 150),
                         true); // Begin child window with border}
     guiCalls();                // Call the function passed as parameter
     ImGui::EndChild();         // End child window

@@ -50,7 +50,6 @@ FwgUI::FwgUI() {
 
   uiUtils = std::make_shared<UIUtils>();
   landUI = LandUI(uiUtils);
-
 }
 
 WNDCLASSEXW FwgUI::initializeWindowClass() {
@@ -157,9 +156,16 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
     auto texWidth = uiUtils->textureWidth * scale;
     auto texHeight = uiUtils->textureHeight * scale;
 
-    // Handle zooming
-    if (io.KeyCtrl) {
-      zoom += io.MouseWheel * 0.1f;
+    // Handle smooth zooming with Ctrl + mouse wheel
+    if (io.KeyCtrl && io.MouseWheel != 0.0f) {
+      float zoomFactor = 1.1f; // 10% per wheel notch
+      if (io.MouseWheel > 0)
+        zoom *= pow(zoomFactor, io.MouseWheel);
+      else
+        zoom /= pow(zoomFactor, -io.MouseWheel);
+
+      // Clamp zoom to reasonable bounds
+      zoom = std::clamp(zoom, 0.98f, 5.0f);
     }
 
     // Create a child window for the image
@@ -172,7 +178,8 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
                             ImGuiWindowFlags_AlwaysVerticalScrollbar);
       if (uiUtils->primaryTexture != nullptr) {
         ImGui::Image((void *)uiUtils->primaryTexture,
-                     ImVec2(texWidth * zoom * 0.98, texHeight * zoom * 0.98));
+                     ImVec2(texWidth * zoom, texHeight * zoom));
+
         if (io.KeyCtrl && io.MouseWheel) {
           // Get the mouse position relative to the image
           ImVec2 mouse_pos = ImGui::GetMousePos();
@@ -188,15 +195,13 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
         }
 
         // Handle dragging
-        if (io.KeyCtrl && ImGui::IsMouseDragging(0, 0.0f)) {
-          ImVec2 drag_delta = ImGui::GetMouseDragDelta(0, 0.0f);
-          ImGui::ResetMouseDragDelta(0);
+        if (ImGui::IsMouseDragging(2, 0.0f)) {
+          ImVec2 drag_delta = ImGui::GetMouseDragDelta(2, 0.0f);
+          ImGui::ResetMouseDragDelta(2);
           ImGui::SetScrollX(ImGui::GetScrollX() - drag_delta.x);
           ImGui::SetScrollY(ImGui::GetScrollY() - drag_delta.y);
         }
-        if (!io.KeyCtrl) {
-          uiUtils->imageClick(scale, io);
-        }
+        uiUtils->imageClick(scale, io);
       }
       // End the child window
       ImGui::EndChild();
@@ -278,7 +283,7 @@ void FwgUI::defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg) {
   showClimateInputTab(cfg, fwg);
   showClimateOverview(cfg, fwg);
   showAreasTab(cfg, fwg);
-  //showCivilizationTab(cfg, fwg);
+  // showCivilizationTab(cfg, fwg);
 }
 
 void FwgUI::computationRunningCheck() {
@@ -535,7 +540,7 @@ static bool analyze = false;
 static int amountClassificationsNeeded = 0;
 int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Land Input")) {
-    if (uiUtils->tabSwitchEvent()) {
+    if (uiUtils->tabSwitchEvent(true)) {
       uiUtils->updateImage(0, landUI.landInput);
       uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
     }
@@ -641,7 +646,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     // 0.1f);
     ImGui::InputDouble("<--Maximum Lake Size Factor", &cfg.lakeMaxShare, 0.01f);
     if (ImGui::InputInt("<--Maximum Land height", &cfg.maxLandHeight)) {
-      cfg.maxLandHeight = std::max<int>(cfg.maxLandHeight, cfg.seaLevel);
+      cfg.maxLandHeight = std::clamp(cfg.maxLandHeight, cfg.seaLevel + 1, 255);
     }
     ImGui::PopItemWidth();
     ImGui::PushItemWidth(100.0f);
@@ -725,7 +730,11 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
     }
     ImGui::SeparatorText("Generate using buttons or drop in file");
-    std::string buttonText = "Generate land shape";
+    std::string buttonText =
+        "Generate land shape from seed " + std::to_string(cfg.mapSeed);
+    if (landUI.loadedTerrainFile.size()) {
+      buttonText = "Regenerate land shape from simple input";
+    }
     if (!cfg.complexLandInput && ImGui::Button(buttonText.c_str())) {
       // we have dragged in a terrain map before, if we generate, we just want
       // to generate with changed parameters
@@ -786,6 +795,20 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (amountClassificationsNeeded > 0 || analyze) {
       ImGui::EndDisabled();
     }
+
+    if (!cfg.complexLandInput &&
+        ImGui::Button("Generate complete random heightmap from new seed")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        cfg.randomSeed = true;
+        cfg.reRandomize();
+        fwg.genHeight();
+        fwg.genLand();
+        uiUtils->resetTexture();
+        updateLayer = true;
+        return true;
+      });
+    }
+
     ImGui::PopItemWidth();
     // drag event
     if (triggeredDrag) {
@@ -852,7 +875,9 @@ int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::SeparatorText("Generate a NormalMap.");
 
     ImGui::PushItemWidth(200.0f);
-    ImGui::InputInt("Sobelfactor", &cfg.sobelFactor);
+    ImGui::InputDouble("Sobelfactor", &cfg.sobelFactor, 0.05, 0.5);
+    // limit sobel to more than 0.00
+    cfg.sobelFactor = std::max<double>(cfg.sobelFactor, 0.01);
     ImGui::PopItemWidth();
     if (fwg.terrainData.detailedHeightMap.size()) {
       if (ImGui::Button("Generate Normalmap")) {
@@ -1154,20 +1179,32 @@ int FwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::SeparatorText("Generate climate map or drop it in");
     if (!fwg.climateData.humidities.size())
       ImGui::BeginDisabled();
-    if (ImGui::Button("Generate")) {
-      computationFutureBool =
-          runAsync([&fwg, &cfg, this]() { // noticed a change of humidity
-                                          // parameters, so we redo the humidity
-            // generation before generating climate map
-            if (redoHumidity) {
-              fwg.genTemperatures(cfg);
-              fwg.genHumidity(cfg);
-              redoHumidity = false;
-            }
-            fwg.genClimate(cfg);
-            uiUtils->resetTexture();
-            return true;
-          });
+    if (!cfg.fantasyClimate &&
+        ImGui::Button(
+            "Generate Climate Zones from Temperature and Heightmap Data")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        // noticed a change of humidity
+        // parameters, so we redo the humidity
+        // generation before generating climate map
+        if (redoHumidity) {
+          fwg.genTemperatures(cfg);
+          fwg.genHumidity(cfg);
+          redoHumidity = false;
+        }
+        fwg.genClimate(cfg);
+        uiUtils->resetTexture();
+        return true;
+      });
+    } else if (cfg.fantasyClimate &&
+               ImGui::Button("Generate completely random fantasy climate")) {
+      computationFutureBool = runAsync([&fwg, &cfg, this]() {
+        fwg.genTemperatures(cfg);
+        fwg.genHumidity(cfg);
+        redoHumidity = false;
+        fwg.genClimate(cfg);
+        uiUtils->resetTexture();
+        return true;
+      });
     }
     if (!fwg.climateData.humidities.size())
       ImGui::EndDisabled();
@@ -1329,7 +1366,8 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("Density");
     if (fwg.climateData.size() && fwg.climateData.climates.size() &&
         fwg.terrainData.landForms.size()) {
-      if (ImGui::Button("Generate density map")) {
+      if (ImGui::Button(
+              "Generate province and state density from climate data")) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genHabitability(cfg);
           uiUtils->resetTexture(0);
@@ -1363,7 +1401,8 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("SuperSegments");
 
     ImGui::PushItemWidth(300.0f);
-    if (ImGui::Button("Generate SuperSegments") ||
+    if (ImGui::Button("Generate SuperSegments from landbodies and ocean/water "
+                      "segments") ||
         (fwg.climateData.habitabilities.size() == cfg.bitmapSize &&
          fwg.areaData.superSegments.empty() && !computationRunning)) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
@@ -1568,10 +1607,12 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           1, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
     }
     uiUtils->showHelpTextBox("Continents");
+    ImGui::PushItemWidth(200.0f);
     ImGui::InputInt("Maximum amount of continents", &cfg.maxAmountOfContinents,
                     1);
+    ImGui::PopItemWidth();
     if (fwg.areaData.landBodies.size() && fwg.areaData.provinces.size()) {
-      if (ImGui::Button("Generate Continents") ||
+      if (ImGui::Button("Generate Continents from landbodies") ||
           (fwg.areaData.continents.empty() && !computationRunning)) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           modifiedAreas = true;

@@ -115,6 +115,10 @@ protected:
   void CreateRenderTarget();
   void CleanupRenderTarget();
 
+  static bool optionalInput(bool condition, std::function<bool()> fn) {
+    return condition ? fn() : false;
+  }
+
   template <typename S> static bool longCircuitLogicalOr(const S first) {
     return first;
   }

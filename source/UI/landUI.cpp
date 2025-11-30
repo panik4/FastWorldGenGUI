@@ -5,7 +5,8 @@ LandUI::LandUI() {}
 LandUI::LandUI(std::shared_ptr<UIUtils> uiUtils) { this->uiUtils = uiUtils; }
 
 void LandUI::RenderScrollableLandInput(
-    std::vector<Fwg::Gfx::Colour> &imageData) {
+    std::vector<Fwg::Gfx::Colour> &imageData,
+    const std::vector<Fwg::Terrain::ElevationType> &elevationTypes) {
   // Begin the scrollable area
   ImGui::BeginChild("ScrollingRegion",
                     ImVec2(ImGui::GetContentRegionAvail().x,
@@ -53,6 +54,44 @@ void LandUI::RenderScrollableLandInput(
   }
   std::sort(colourOrder.begin(), colourOrder.end(), Fwg::Gfx::colourSort);
 
+  // --- Handle click events for direct selection from the map ---
+  auto &clickEvents = uiUtils->clickEvents;
+  if (!clickEvents.empty()) {
+    auto event = clickEvents.front();
+    clickEvents.pop();
+
+    if (event.pixel >= 0 && event.pixel < imageData.size()) {
+      Fwg::Gfx::Colour clickedColour = imageData[event.pixel];
+
+      // Ensure clicked colour is known
+      if (landInputColours.getMap().contains(clickedColour)) {
+
+        ImGuiIO &io = ImGui::GetIO();
+
+        if (io.KeyCtrl) {
+          // CTRL toggle selection
+          singularEdit = false;
+
+          if (selectedInputs.contains(clickedColour))
+            selectedInputs.erase(clickedColour);
+          else
+            selectedInputs.insert(clickedColour);
+
+          // Update last clicked, but do NOT override singular selection
+          lastClickedInput = clickedColour;
+        } else {
+          // Regular click  single select + popup
+          singularEdit = true;
+          selectedInputs.clear();
+          selectedInputs.insert(clickedColour);
+          lastClickedInput = clickedColour;
+
+          ImGui::OpenPopup("ClassificationPopup");
+        }
+      }
+    }
+  }
+
   // --- Iterate with index tracking ---
   for (int i = 0; i < colourOrder.size(); ++i) {
     auto &id = colourOrder[i];
@@ -70,9 +109,10 @@ void LandUI::RenderScrollableLandInput(
     ImGui::SameLine();
 
     // --- Selection button ---
-    if (isSelected)
+    if (isSelected) {
       ImGui::PushStyleColor(ImGuiCol_Button,
                             ImVec4(0.3f, 0.6f, 1.0f, 1.0f)); // Blue tint
+    }
 
     std::string buttonLabel = "Select type for " + entry.in.toString();
     if (ImGui::Button(buttonLabel.c_str())) {
@@ -141,25 +181,43 @@ void LandUI::RenderScrollableLandInput(
 
   // --- Classification Popup ---
   if (ImGui::BeginPopup("ClassificationPopup")) {
+    static std::vector<Fwg::Gfx::Colour> popupSelectedInputs;
     ImGui::SeparatorText("Classify selected land input colours");
-    for (auto &internalType : allowedLandInputs.getMap()) {
-      if (ImGui::Button(internalType.second.name.c_str())) {
+
+    const int columns = 3;
+    int count = 0;
+
+    ImGui::BeginGroup();
+    for (auto &elevationType : elevationTypes) {
+      // Each button has a fixed width to keep the grid tidy
+      ImGui::PushID(elevationType.colour.toString().c_str());
+      if (ImGui::Button(elevationType.name.c_str(), ImVec2(150, 0))) {
+
+        // Apply chosen classification to all selected items
         for (const auto &selId : selectedInputs) {
           auto &entry = landInputColours.getMap().at(selId);
-          entry.out = internalType.second.colour;
+          entry.out = elevationType.colour;
           highlightedInputs.insert(selId);
         }
         selectedInputs.clear();
         ImGui::CloseCurrentPopup();
       }
+      ImGui::PopID();
+
+      // Grid layout: place next button on the same line until row is full
+      count++;
+      if (count % columns != 0)
+        ImGui::SameLine();
     }
+    ImGui::EndGroup();
+
     ImGui::EndPopup();
   }
   // End the scrollable area
   ImGui::EndChild();
 }
 
-bool LandUI::analyzeLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                             const Fwg::Gfx::Bitmap &landInput,
                             int &amountClassificationsNeeded) {
   landInputColours.clear();
@@ -221,7 +279,7 @@ bool LandUI::analyzeLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 }
 
 void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                                bool &analyze,
+                                bool &analyse,
                                 int &amountClassificationsNeeded) {
   ImGui::Value("Colours needing classification: ", amountClassificationsNeeded);
   std::vector<const char *> imageColours;
@@ -235,10 +293,11 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       landInColour.second.rgbName =
           (allowedLandInputs.find(landInColour.second.out)
                ? allowedLandInputs[landInColour.second.out].name
-               : "Unclassified");
+               : "UNCLASSIFIED");
     }
   }
-  RenderScrollableLandInput(landInput.imageData);
+  RenderScrollableLandInput(landInput.imageData,
+                            fwg.terrainData.elevationTypes);
   if (highlightedInputs.size() > 0) {
     ImGui::Text("Before next analysis, apply all types");
     if (ImGui::Button("Apply all")) {
@@ -252,11 +311,11 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
       uiUtils->resetTexture();
     }
-  } else if (ImGui::Button("Analyze Input") || analyze) {
+  } else if (ImGui::Button("Analyse Input") || analyse) {
     // always reload the classified map from disk
     Fwg::Gfx::Bmp::save(landInput, cfg.mapsPath + "//classifiedLandInput.bmp");
-    analyzeLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
-    analyze = false;
+    analyseLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
+    analyse = false;
   }
 }
 
@@ -329,21 +388,39 @@ void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 void LandUI::configureLandElevationFactors(Fwg::Cfg &cfg,
                                            Fwg::FastWorldGenerator &fwg) {
   if (cfg.complexLandInput) {
-    ImGui::PushItemWidth(100.0f);
     ImGui::SeparatorText("Land Elevation Factors");
-    ImGui::InputFloat("Plains Factor", &cfg.plainsFactor, 0.01f, 0.1f);
-    ImGui::InputFloat("Low Hills Factor", &cfg.lowhillsFactor, 0.01f, 1.0f);
-    ImGui::InputFloat("Hills Factor", &cfg.hillsFactor, 0.02f, 1.0f);
-    ImGui::InputFloat("Mountains Factor", &cfg.mountainsFactor, 0.05f, 1.0f);
-    ImGui::InputFloat("Peaks Factor", &cfg.peaksFactor, 0.05f, 1.0f);
-    ImGui::InputFloat("Steep Peaks Factor", &cfg.steepPeaksFactor, 0.1f, 1.0f);
-    ImGui::InputFloat("Cliffs Factor", &cfg.cliffsFactor, 0.05f, 1.0f);
-    ImGui::InputFloat("Valley Factor", &cfg.valleyFactor, 0.01f, 1.0f);
-    ImGui::InputFloat("Highlands Factor", &cfg.highlandsFactor, 0.01f, 1.0f);
-    ImGui::InputFloat("Ocean Factor", &cfg.oceanFactor, 0.1f, 1.0f);
-    ImGui::InputFloat("Deep Ocean Factor", &cfg.deepOceanFactor, 0.1f, 1.0f);
-    ImGui::InputFloat("Lake Factor", &cfg.lakeFactor, 0.1f, 1.0f);
-    ImGui::PopItemWidth();
+    const float labelWidth = 10.0f; // reserve space for label
+    const float inputWidth = 100.0f; // fixed input box width
+    const int itemsPerRow = 3;
+    int counter = 0;
+
+    auto addFactor = [&](const char *label, float &value) {
+      ImGui::BeginGroup(); // group label + input as one block
+      ImGui::Text("%-*s", (int)labelWidth, label); // fixed width label
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(inputWidth);
+      ImGui::InputFloat((std::string("##") + label).c_str(), &value, 0.01f,
+                        0.1f);
+      ImGui::EndGroup();
+
+      counter++;
+      if (counter % itemsPerRow != 0)
+        ImGui::SameLine();
+    };
+
+    // Example usage
+    addFactor("Plains", cfg.plainsFactor);
+    addFactor("Low Hills", cfg.lowhillsFactor);
+    addFactor("Hills", cfg.hillsFactor);
+    addFactor("Mountains", cfg.mountainsFactor);
+    addFactor("Peaks", cfg.peaksFactor);
+    addFactor("Steep Peaks", cfg.steepPeaksFactor);
+    addFactor("Cliffs", cfg.cliffsFactor);
+    addFactor("Valley", cfg.valleyFactor);
+    addFactor("Highlands", cfg.highlandsFactor);
+    addFactor("Ocean", cfg.oceanFactor);
+    addFactor("Deep Ocean", cfg.deepOceanFactor);
+    addFactor("Lake", cfg.lakeFactor);
   }
 }
 

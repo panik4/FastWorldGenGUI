@@ -1,5 +1,6 @@
 #pragma once
 #include "FastWorldGenerator.h"
+#include "UI/InputUI.h"
 #include "UIUtils.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
@@ -21,8 +22,11 @@ class LandUI {
 private:
   std::shared_ptr<UIUtils> uiUtils;
   std::set<Fwg::Gfx::Colour> highlightedInputs;
-  void RenderScrollableLandInput(std::vector<Fwg::Gfx::Colour> &imageData);
-  bool analyzeLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+
+  void RenderScrollableLandInput(
+      std::vector<Fwg::Gfx::Colour> &imageData,
+      const std::vector<Fwg::Terrain::ElevationType> &elevationTypes);
+  bool analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                       const Fwg::Gfx::Bitmap &landInput,
                       int &amountClassificationsNeeded);
 

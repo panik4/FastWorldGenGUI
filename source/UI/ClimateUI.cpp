@@ -1,67 +1,158 @@
 #include "UI/ClimateUI.h"
 
-bool ClimateUI::RenderScrollableArea(std::vector<Fwg::Gfx::Colour> &imageData) {
-  // Begin the scrollable area
-  ImGui::BeginChild("ScrollingRegion", ImVec2(700, 300), false,
-                    ImGuiWindowFlags_HorizontalScrollbar);
-  static Fwg::Gfx::Colour *selectedLabel;
-  static Fwg::Gfx::Colour selectedId;
+bool ClimateUI::RenderScrollableClimateInput(
+    std::vector<Fwg::Gfx::Colour> &imageData) {
+  ImGui::BeginChild("ScrollingRegion",
+                    ImVec2(ImGui::GetContentRegionAvail().x,
+                           ImGui::GetContentRegionAvail().y * 0.8f),
+                    false, ImGuiWindowFlags_HorizontalScrollbar);
+
+  // --- Selection state ---
+  static bool singularEdit = false;
+  static std::unordered_set<Fwg::Gfx::Colour> selectedInputs;
+  static std::optional<Fwg::Gfx::Colour> lastClickedInput;
 
   bool updated = false;
 
-  for (auto &input : climateInputColours.getMap()) {
-    ImGui::ColorEdit3("Selected Colour", (float *)&input.second.colour,
-                      ImGuiColorEditFlags_NoInputs |
-                          ImGuiColorEditFlags_NoLabel |
-                          ImGuiColorEditFlags_HDR);
-    ImGui::SameLine();
-    ImGui::Text(("Currently labeled as: " + input.second.rgbName).c_str());
+  // --- Build sorted order for deterministic UX ---
+  std::vector<Fwg::Gfx::Colour> colourOrder;
+  for (auto &entry : climateInputColours.getMap()) {
+    colourOrder.push_back(entry.second.in);
+  }
+  std::sort(colourOrder.begin(), colourOrder.end(), Fwg::Gfx::colourSort);
+
+  // --- Global apply-to-selected buttons ---
+  if (!selectedInputs.empty() && !singularEdit) {
+    ImGui::Separator();
+    ImGui::Text("Selected items: %zu", selectedInputs.size());
     ImGui::SameLine();
 
-    // Select type button
-    if (ImGui::Button(
-            ("Select type for " + input.second.in.toString()).c_str())) {
-      selectedLabel = &input.second.out;
-      selectedId = input.second.in;
-      ImGui::OpenPopup("ClassificationPopup");
+    if (ImGui::Button("Classify selected")) {
+      ImGui::OpenPopup("ClimateClassificationPopup");
     }
 
     ImGui::SameLine();
 
-    // Highlight Apply button if previously selected
-    if (highlightedInputs.contains(input.second.in)) {
-      ImGui::PushStyleColor(ImGuiCol_Button,
-                            ImVec4(1.0f, 0.2f, 0.2f, 1.0f)); // Red
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                            ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                            ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-    }
-
-    if (ImGui::Button(
-            ("Apply type for " + input.second.in.toString()).c_str())) {
-      for (auto &pix : input.second.pixels) {
-        imageData[pix] = input.second.out;
+    if (ImGui::Button("Apply type to all selected")) {
+      for (const auto &selId : selectedInputs) {
+        if (climateInputColours.getMap().contains(selId)) {
+          auto &entry = climateInputColours.getMap().at(selId);
+          for (auto &pix : entry.pixels) {
+            imageData[pix] = entry.out;
+          }
+        }
       }
+      highlightedInputs.clear();
       updated = true;
-      highlightedInputs.erase(
-          input.second.in); // Clear highlight after applying
-      ImGui::PopStyleColor(3);
-    }
-
-    if (highlightedInputs.contains(input.second.in)) {
-      ImGui::PopStyleColor(3);
+      selectedInputs.clear();
     }
   }
 
-  // Classification popup
-  if (ImGui::BeginPopup("ClassificationPopup")) {
-    ImGui::SeparatorText("Classify the type of this climate input colour");
+  // --- Iterate through sorted entries ---
+  for (int i = 0; i < colourOrder.size(); ++i) {
+    auto &id = colourOrder[i];
+    auto &entry = climateInputColours.getMap().at(id);
+
+    bool isSelected = selectedInputs.contains(entry.in);
+
+    // Colour preview
+    ImGui::ColorEdit3("##colourPreview", (float *)&entry.colour,
+                      ImGuiColorEditFlags_NoInputs |
+                          ImGuiColorEditFlags_NoLabel |
+                          ImGuiColorEditFlags_HDR);
+
+    ImGui::SameLine();
+    ImGui::Text("%s", ("Currently labeled as: " + entry.rgbName).c_str());
+    ImGui::SameLine();
+
+    // --- Selection button ---
+    if (isSelected) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.6f, 1.0f, 1.0f));
+    }
+
+    std::string btnLabel = "Select type for " + entry.in.toString();
+    if (ImGui::Button(btnLabel.c_str())) {
+
+      ImGuiIO &io = ImGui::GetIO();
+
+      // SHIFT: range-select
+      if (io.KeyShift && lastClickedInput.has_value()) {
+        singularEdit = false;
+
+        auto it1 = std::find(colourOrder.begin(), colourOrder.end(),
+                             *lastClickedInput);
+        auto it2 = std::find(colourOrder.begin(), colourOrder.end(), entry.in);
+        if (it1 != colourOrder.end() && it2 != colourOrder.end()) {
+          if (it1 > it2)
+            std::swap(it1, it2);
+          for (auto it = it1; it <= it2; ++it) {
+            selectedInputs.insert(*it);
+          }
+        }
+      }
+      // CTRL: toggle
+      else if (io.KeyCtrl) {
+        singularEdit = false;
+
+        if (selectedInputs.contains(entry.in))
+          selectedInputs.erase(entry.in);
+        else
+          selectedInputs.insert(entry.in);
+
+        lastClickedInput = entry.in;
+        if (selectedInputs.size() <= 1)
+          singularEdit = true;
+      }
+      // Normal click: single select
+      else {
+        singularEdit = true;
+        selectedInputs.clear();
+        selectedInputs.insert(entry.in);
+        lastClickedInput = entry.in;
+
+        ImGui::OpenPopup("ClimateClassificationPopup");
+      }
+    }
+
+    if (isSelected)
+      ImGui::PopStyleColor();
+
+    ImGui::SameLine();
+
+    // --- Highlighted entries ---
+    bool isHighlighted = highlightedInputs.contains(entry.in);
+    if (isHighlighted) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1, 0.2f, 0.2f, 1));
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 0.4f, 0.4f, 1));
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 0.3f, 0.3f, 1));
+    }
+
+    // --- Apply single ---
+    if (ImGui::Button(("Apply type for " + entry.in.toString()).c_str())) {
+      for (auto &pix : entry.pixels)
+        imageData[pix] = entry.out;
+
+      highlightedInputs.erase(entry.in);
+      updated = true;
+    }
+
+    if (isHighlighted)
+      ImGui::PopStyleColor(3);
+  }
+
+  // --- Classification Popup ---
+  if (ImGui::BeginPopup("ClimateClassificationPopup")) {
+    ImGui::SeparatorText("Classify selected climate input colours");
+
     for (auto &internalType : allowedClimateInputs.getMap()) {
       if (ImGui::Button(internalType.second.name.c_str())) {
-        *selectedLabel = internalType.second.primaryColour;
-        // Only here: add to highlightedInputs
-        highlightedInputs.insert(selectedId);
+        for (const auto &selId : selectedInputs) {
+          auto &entry = climateInputColours.getMap().at(selId);
+          entry.out = internalType.second.primaryColour;
+          highlightedInputs.insert(selId);
+        }
+        selectedInputs.clear();
+        ImGui::CloseCurrentPopup();
       }
     }
     ImGui::EndPopup();
@@ -142,22 +233,20 @@ bool ClimateUI::complexTerrainMapping(Fwg::Cfg &cfg,
                                       bool &analyze,
                                       int &amountClassificationsNeeded) {
   bool updated = false;
-  std::vector<const char *> imageColours;
-  std::vector<const char *> selectableTypes;
-  for (auto &elem : climateInputColours.getMap()) {
-    selectableTypes.push_back(elem.second.rgbName.c_str());
-  }
-  for (auto &climateInColour : climateInputColours.getMap()) {
-    // only show elems with a size
-    if (climateInColour.second.pixels.size()) {
-      climateInColour.second.rgbName =
-          (allowedClimateInputs.find(climateInColour.second.out)
-               ? allowedClimateInputs[climateInColour.second.out].name
-               : "Unclassified");
+
+  // Update names of entries based on classification
+  for (auto &cl : climateInputColours.getMap()) {
+    if (cl.second.pixels.size()) {
+      cl.second.rgbName = (allowedClimateInputs.find(cl.second.out)
+                               ? allowedClimateInputs[cl.second.out].name
+                               : "Unclassified");
     }
   }
-  updated = RenderScrollableArea(climateInputMap.imageData);
-  if (highlightedInputs.size() > 0) {
+
+  updated |= RenderScrollableClimateInput(climateInputMap.imageData);
+
+  // "Apply all" option
+  if (!highlightedInputs.empty()) {
     ImGui::Text("Before next analysis, apply all types");
     if (ImGui::Button("Apply all")) {
       for (auto &input : climateInputColours.getMap()) {
@@ -170,10 +259,13 @@ bool ClimateUI::complexTerrainMapping(Fwg::Cfg &cfg,
       }
       updated = true;
     }
-  } else if (ImGui::Button("Analyze Input") || analyze) {
+  }
+  // Re-analyze
+  else if (ImGui::Button("Analyze Input") || analyze) {
     analyzeClimateMap(cfg, fwg, climateInputMap, amountClassificationsNeeded);
     analyze = false;
   }
+
   ImGui::Value("Colours needing classification: ", amountClassificationsNeeded);
   return updated;
 }

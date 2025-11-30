@@ -5,7 +5,7 @@
 #include "backends/imgui_impl_win32.h"
 #include "imgui.h"
 
-enum class InteractionType { NONE, CLICK, RCLICK, DRAG };
+enum class InteractionType { NONE, CLICK, RCLICK};
 
 struct ClickEvent {
   int pixel;

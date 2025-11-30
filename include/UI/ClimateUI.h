@@ -18,7 +18,7 @@ class ClimateUI {
   std::set<Fwg::Gfx::Colour> highlightedInputs;
 
 public:
-  bool RenderScrollableArea(std::vector<Fwg::Gfx::Colour> &imageData);
+  bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData);
   bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                          const Fwg::Gfx::Bitmap &climateInput,
                          int &amountClassificationsNeeded);
