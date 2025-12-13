@@ -11,7 +11,7 @@ class ClimateUI {
     Fwg::Gfx::Colour in;
     Fwg::Gfx::Colour out;
     std::string rgbName;
-    Fwg::Climate::ClimateType climate;
+    Fwg::Climate::ClimateClassDefinition climate;
     ImVec4 colour;
     std::vector<int> pixels;
   };
@@ -27,5 +27,5 @@ public:
 
   Fwg::Gfx::Bitmap climateInputMap;
   Fwg::Utils::ColourTMap<ClimateInput> climateInputColours;
-  Fwg::Utils::ColourTMap<Fwg::Climate::ClimateType> allowedClimateInputs;
+  Fwg::Utils::ColourTMap<Fwg::Climate::ClimateClassDefinition> allowedClimateInputs;
 };

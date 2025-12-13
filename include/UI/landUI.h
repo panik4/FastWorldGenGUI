@@ -13,7 +13,7 @@ struct ElevationInput {
   Fwg::Gfx::Colour in;
   Fwg::Gfx::Colour out;
   std::string rgbName;
-  Fwg::Terrain::ElevationType type;
+  Fwg::Terrain::LandformDefinition type;
   ImVec4 colour;
   std::vector<int> pixels;
 };
@@ -25,7 +25,7 @@ private:
 
   void RenderScrollableLandInput(
       std::vector<Fwg::Gfx::Colour> &imageData,
-      const std::vector<Fwg::Terrain::ElevationType> &elevationTypes);
+      const std::vector<Fwg::Terrain::LandformDefinition> &landformDefinitions);
   bool analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                       const Fwg::Gfx::Bitmap &landInput,
                       int &amountClassificationsNeeded);
@@ -39,7 +39,7 @@ public:
   void complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           bool &analyze, int &amountClassificationsNeeded);
   Fwg::Utils::ColourTMap<ElevationInput> landInputColours;
-  Fwg::Utils::ColourTMap<Fwg::Terrain::ElevationType> allowedLandInputs;
+  Fwg::Utils::ColourTMap<Fwg::Terrain::LandformDefinition> allowedLandInputs;
   void triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           const std::string &draggedFile, bool classifyInput);
   void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);

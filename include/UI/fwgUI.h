@@ -75,7 +75,7 @@ protected:
   void disableBlock(const Fwg::Gfx::Bitmap &bitmap);
   void reenableBlock(const Fwg::Gfx::Bitmap &bitmap);
   void initAllowedInput(Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
-                        std::vector<Terrain::ElevationType> &elevationTypes);
+                        std::vector<Terrain::LandformDefinition> &landformDefinitions);
 
   void clearColours(Fwg::Gfx::Bitmap &image);
   virtual int showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);

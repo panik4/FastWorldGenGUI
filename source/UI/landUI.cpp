@@ -6,7 +6,7 @@ LandUI::LandUI(std::shared_ptr<UIUtils> uiUtils) { this->uiUtils = uiUtils; }
 
 void LandUI::RenderScrollableLandInput(
     std::vector<Fwg::Gfx::Colour> &imageData,
-    const std::vector<Fwg::Terrain::ElevationType> &elevationTypes) {
+    const std::vector<Fwg::Terrain::LandformDefinition> &landformDefinitions) {
   // Begin the scrollable area
   ImGui::BeginChild("ScrollingRegion",
                     ImVec2(ImGui::GetContentRegionAvail().x,
@@ -188,7 +188,7 @@ void LandUI::RenderScrollableLandInput(
     int count = 0;
 
     ImGui::BeginGroup();
-    for (auto &elevationType : elevationTypes) {
+    for (auto &elevationType : landformDefinitions) {
       // Each button has a fixed width to keep the grid tidy
       ImGui::PushID(elevationType.colour.toString().c_str());
       if (ImGui::Button(elevationType.name.c_str(), ImVec2(150, 0))) {
@@ -251,7 +251,7 @@ bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         // set it
         landInputColours.setValue(
             colour, ElevationInput{colour, colour, "Unclassified",
-                                   fwg.terrainData.elevationTypes[0],
+                                   fwg.terrainData.landformDefinitions[0],
                                    inputColourVisualHelp});
         landInputColours[colour].pixels.push_back(imageIndex);
         amountClassificationsNeeded++;
@@ -297,7 +297,7 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
   }
   RenderScrollableLandInput(landInput.imageData,
-                            fwg.terrainData.elevationTypes);
+                            fwg.terrainData.landformDefinitions);
   if (highlightedInputs.size() > 0) {
     ImGui::Text("Before next analysis, apply all types");
     if (ImGui::Button("Apply all")) {

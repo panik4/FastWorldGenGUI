@@ -231,7 +231,7 @@ void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   *log << Fwg::Utils::Logging::Logger::logInstance.getFullLog();
   Fwg::Utils::Logging::Logger::logInstance.attachStream(log);
   fwg.configure(cfg);
-  initAllowedInput(cfg, fwg.climateData, fwg.terrainData.elevationTypes);
+  initAllowedInput(cfg, fwg.climateData, fwg.terrainData.landformDefinitions);
 }
 
 void FwgUI::initDraggingPoll(bool &done) {
@@ -426,16 +426,16 @@ void FwgUI::reenableBlock(const Fwg::Gfx::Bitmap &bitmap) {
 }
 void FwgUI::initAllowedInput(
     Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
-    std::vector<Terrain::ElevationType> &elevationTypes) {
+    std::vector<Terrain::LandformDefinition> &landformDefinitions) {
   Fwg::Utils::Logging::logLine("Initialising allowed input");
-  auto &climateTypes = climateData.climateTypes;
+  auto &climateClassDefinitions = climateData.climateClassDefinitions;
   climateUI.allowedClimateInputs.clear();
-  for (const auto &climateType : climateTypes) {
+  for (const auto &climateType : climateClassDefinitions) {
     climateUI.allowedClimateInputs.setValue(climateType.primaryColour,
                                             climateType);
   }
 
-  for (const auto &elevationType : elevationTypes) {
+  for (const auto &elevationType : landformDefinitions) {
     landUI.allowedLandInputs.setValue(elevationType.colour, elevationType);
   }
 };
@@ -605,8 +605,8 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           }
           updateLayer = false;
         } else {
-          if (fwg.terrainData.landMap.size()) {
-            uiUtils->updateImage(1, Fwg::Gfx::landMap(fwg.terrainData));
+          if (fwg.terrainData.landMask.size()) {
+            uiUtils->updateImage(1, Fwg::Gfx::landMask(fwg.terrainData));
           } else {
             uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
           }
@@ -774,7 +774,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         fwg.genHeightFromInput(cfg, cfg.mapsPath + "//classifiedLandInput.bmp");
         uiUtils->updateImage(
             0, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
-        uiUtils->updateImage(1, Fwg::Gfx::landMap(fwg.terrainData));
+        uiUtils->updateImage(1, Fwg::Gfx::landMask(fwg.terrainData));
       }
       computationFutureBool = runAsync([&fwg, this]() {
         fwg.genLand();
@@ -942,8 +942,8 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                                &cfg.riverEffectRangeFactor, 0.1))) {
       redoHumidity = true;
     }
-    if (fwg.terrainData.landForms.size() > 0 &&
-        fwg.terrainData.landForms.size() ==
+    if (fwg.terrainData.landFormIds.size() > 0 &&
+        fwg.terrainData.landFormIds.size() ==
             fwg.terrainData.detailedHeightMap.size() &&
         UI::Elements::AutomationStepButton(
             "Generate whole climate automatically")) {
@@ -960,7 +960,7 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       });
     }
     ImGui::PopItemWidth();
-    if (!fwg.terrainData.landForms.size()) {
+    if (!fwg.terrainData.landFormIds.size()) {
 
       ImGui::Text("Have a heightmap, land classification and normalmap "
                   "first");
@@ -975,7 +975,7 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       UI::Elements::EndSubTabBar();
     }
 
-    if (!fwg.terrainData.landForms.size()) {
+    if (!fwg.terrainData.landFormIds.size()) {
       ImGui::EndDisabled();
     }
     ImGui::EndTabItem();
@@ -1003,8 +1003,8 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         climateUI.climateInputMap =
             Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
         // create a map from secondary colours to primary colours
-        Fwg::Utils::ColourTMap<Fwg::Climate::ClimateType> secondaryToPrimary;
-        for (auto &type : fwg.climateData.climateTypes) {
+        Fwg::Utils::ColourTMap<Fwg::Climate::ClimateClassDefinition> secondaryToPrimary;
+        for (auto &type : fwg.climateData.climateClassDefinitions) {
           for (auto &secondary : type.secondaryColours) {
             secondaryToPrimary.setValue(secondary, type);
           }
@@ -1085,7 +1085,7 @@ int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       triggeredDrag = false;
       uiUtils->resetTexture();
     }
-    // if (uiUtils->simpleDraw(fwg.terrainData.landMap,
+    // if (uiUtils->simpleDraw(fwg.terrainData.landMask,
     //                         fwg.climateData.averageTemperatures, 1.0f)) {
     //   displayImage = Fwg::Gfx::Climate::displayTemperature(fwg.climateData);
     // }
@@ -1119,11 +1119,11 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       triggeredDrag = false;
       uiUtils->resetTexture();
     }
-    // if (uiUtils->simpleDraw(fwg.terrainData.landMap,
+    // if (uiUtils->simpleDraw(fwg.terrainData.landMask,
     // fwg.climateData.humidities,
     //                         1.0f)) {
     //   displayImage = Gfx::Climate::displayHumidity(fwg.climateData);
-    //   // overwrite to be able to reset after applying river humidity
+    //   // overwrite to be able to reset after applying river referenceHumidity
     //   fwg.preModifyHumidityMap = fwg.climateData.humidities;
     // }
     ImGui::EndTabItem();
@@ -1183,8 +1183,8 @@ int FwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         ImGui::Button(
             "Generate Climate Zones from Temperature and Heightmap Data")) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
-        // noticed a change of humidity
-        // parameters, so we redo the humidity
+        // noticed a change of referenceHumidity
+        // parameters, so we redo the referenceHumidity
         // generation before generating climate map
         if (redoHumidity) {
           fwg.genTemperatures(cfg);
@@ -1320,8 +1320,8 @@ int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     // uiUtils->showHelpTextBox("Areas");
     //  Button to generate segments
-    if (fwg.climateData.size() && fwg.climateData.climates.size() &&
-        fwg.terrainData.landForms.size()) {
+    if (fwg.climateData.size() && fwg.climateData.climateChances.size() &&
+        fwg.terrainData.landFormIds.size()) {
       if (UI::Elements::AutomationStepButton(
               "Generate all areas automatically")) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
@@ -1355,7 +1355,7 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       // pre-create density map, if not existing yet, so users see the default
       // map and can then decide to overwrite (or change parameters)
       if (!fwg.climateData.habitabilities.size() &&
-          fwg.climateData.climates.size() && fwg.terrainData.landForms.size()) {
+          fwg.climateData.climateChances.size() && fwg.terrainData.landFormIds.size()) {
         fwg.genHabitability(cfg);
       }
       uiUtils->updateImage(
@@ -1364,8 +1364,8 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
 
     uiUtils->showHelpTextBox("Density");
-    if (fwg.climateData.size() && fwg.climateData.climates.size() &&
-        fwg.terrainData.landForms.size()) {
+    if (fwg.climateData.size() && fwg.climateData.climateChances.size() &&
+        fwg.terrainData.landFormIds.size()) {
       if (ImGui::Button(
               "Generate province and state density from climate data")) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
@@ -1412,7 +1412,7 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       });
     }
     ImGui::PopItemWidth();
-    if (fwg.climateData.climates.size()) {
+    if (fwg.climateData.climateChances.size()) {
       if (triggeredDrag) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           triggeredDrag = false;
@@ -1459,7 +1459,7 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       cfg.calcAreaParameters();
     }
     ImGui::PopItemWidth();
-    if (fwg.climateData.climates.size()) {
+    if (fwg.climateData.climateChances.size()) {
       ImGui::Text("The map has %i land segments",
                   static_cast<int>(fwg.areaData.landSegments));
       ImGui::Text("The map has %i sea segments",
@@ -1509,7 +1509,7 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("Provinces");
     if (fwg.terrainData.detailedHeightMap.size() &&
-        fwg.terrainData.landForms.size() &&
+        fwg.terrainData.landFormIds.size() &&
         fwg.climateData.habitabilities.size()) {
       ImGui::PushItemWidth(200.0f);
       ImGui::SeparatorText("Generate a province map or drop it in");
@@ -1560,7 +1560,7 @@ int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("Regions");
 
     if (fwg.terrainData.detailedHeightMap.size() &&
-        fwg.terrainData.landForms.size() &&
+        fwg.terrainData.landFormIds.size() &&
         fwg.climateData.habitabilities.size() &&
         fwg.provinceMap.initialised()) {
       ImGui::SeparatorText("Generate a region map");
