@@ -435,8 +435,9 @@ void FwgUI::initAllowedInput(
                                             climateType);
   }
 
-  for (const auto &elevationType : landformDefinitions) {
-    landUI.allowedLandInputs.setValue(elevationType.colour, elevationType);
+  for (const auto &landformDefinition : landformDefinitions) {
+    landUI.allowedLandInputs.setValue(landformDefinition.colour,
+                                      landformDefinition);
   }
 };
 
@@ -1003,7 +1004,8 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         climateUI.climateInputMap =
             Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
         // create a map from secondary colours to primary colours
-        Fwg::Utils::ColourTMap<Fwg::Climate::ClimateClassDefinition> secondaryToPrimary;
+        Fwg::Utils::ColourTMap<Fwg::Climate::ClimateClassDefinition>
+            secondaryToPrimary;
         for (auto &type : fwg.climateData.climateClassDefinitions) {
           for (auto &secondary : type.secondaryColours) {
             secondaryToPrimary.setValue(secondary, type);
@@ -1355,7 +1357,8 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       // pre-create density map, if not existing yet, so users see the default
       // map and can then decide to overwrite (or change parameters)
       if (!fwg.climateData.habitabilities.size() &&
-          fwg.climateData.climateChances.size() && fwg.terrainData.landFormIds.size()) {
+          fwg.climateData.climateChances.size() &&
+          fwg.terrainData.landFormIds.size()) {
         fwg.genHabitability(cfg);
       }
       uiUtils->updateImage(

@@ -188,15 +188,15 @@ void LandUI::RenderScrollableLandInput(
     int count = 0;
 
     ImGui::BeginGroup();
-    for (auto &elevationType : landformDefinitions) {
+    for (auto &landformDefinition : landformDefinitions) {
       // Each button has a fixed width to keep the grid tidy
-      ImGui::PushID(elevationType.colour.toString().c_str());
-      if (ImGui::Button(elevationType.name.c_str(), ImVec2(150, 0))) {
+      ImGui::PushID(landformDefinition.colour.toString().c_str());
+      if (ImGui::Button(landformDefinition.name.c_str(), ImVec2(150, 0))) {
 
         // Apply chosen classification to all selected items
         for (const auto &selId : selectedInputs) {
           auto &entry = landInputColours.getMap().at(selId);
-          entry.out = elevationType.colour;
+          entry.out = landformDefinition.colour;
           highlightedInputs.insert(selId);
         }
         selectedInputs.clear();
