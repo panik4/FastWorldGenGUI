@@ -163,7 +163,7 @@ bool ClimateUI::RenderScrollableClimateInput(
 }
 
 bool ClimateUI::analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                                  const Fwg::Gfx::Bitmap &climateInput,
+                                  const Fwg::Gfx::Image &climateInput,
                                   int &amountClassificationsNeeded) {
   climateInputColours.clear();
   amountClassificationsNeeded = 0;

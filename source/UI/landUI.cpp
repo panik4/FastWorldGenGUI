@@ -218,7 +218,7 @@ void LandUI::RenderScrollableLandInput(
 }
 
 bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                            const Fwg::Gfx::Bitmap &landInput,
+                            const Fwg::Gfx::Image &landInput,
                             int &amountClassificationsNeeded) {
   landInputColours.clear();
   amountClassificationsNeeded = 0;
@@ -313,7 +313,7 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
   } else if (ImGui::Button("Analyse Input") || analyse) {
     // always reload the classified map from disk
-    Fwg::Gfx::Bmp::save(landInput, cfg.mapsPath + "//classifiedLandInput.bmp");
+    Fwg::Gfx::Bmp::save(landInput, cfg.mapsPath + "//classifiedLandInput.png");
     analyseLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
     analyse = false;
   }
@@ -335,8 +335,8 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     //   Utils::Logging::logLine("Invalid resolution for land input image");
     //   landInput.clear();
     // }
-    //  save the landmap to classifiedLandInput.bmp
-    Fwg::Gfx::Bmp::save(landInput, cfg.mapsPath + "//classifiedLandInput.bmp");
+    //  save the landmap to classifiedLandInput.png
+    Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "//classifiedLandInput.png");
   } else {
     fwg.resetData();
     fwg.genHeightFromInput(cfg, draggedFile);

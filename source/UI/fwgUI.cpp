@@ -416,12 +416,12 @@ int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-void FwgUI::disableBlock(const Fwg::Gfx::Bitmap &bitmap) {
-  if (!bitmap.initialised())
+void FwgUI::disableBlock(const Fwg::Gfx::Image &image) {
+  if (!image.initialised())
     ImGui::BeginDisabled();
 }
-void FwgUI::reenableBlock(const Fwg::Gfx::Bitmap &bitmap) {
-  if (!bitmap.initialised())
+void FwgUI::reenableBlock(const Fwg::Gfx::Image &image) {
+  if (!image.initialised())
     ImGui::EndDisabled();
 }
 void FwgUI::initAllowedInput(
@@ -543,7 +543,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Land Input")) {
     if (uiUtils->tabSwitchEvent(true)) {
       uiUtils->updateImage(0, landUI.landInput);
-      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+      uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     uiUtils->showHelpTextBox("Land");
 
@@ -570,7 +570,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         // after the first drag, we have saved the original input to this new
         // file now we always want to reload it from here to get the progressive
         // changes, never overwriting the original
-        originalLandInput = cfg.mapsPath + "//classifiedLandInput.bmp";
+        originalLandInput = cfg.mapsPath + "//classifiedLandInput.png";
         // in case of complex input and a drag, we NEED to initially analyze
         if (cfg.complexLandInput) {
           analyze = true;
@@ -594,14 +594,14 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
             Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap);
         uiUtils->updateImage(1, heightmap);
         uiUtils->updateImage(0, heightmap);
-        uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+        uiUtils->updateImage(1, Fwg::Gfx::Image());
         // wrap around because we want to show two images
         if (updateLayer) {
           if (selectedLayer < fwg.layerData.size() &&
               fwg.layerData[selectedLayer].size() &&
               fwg.terrainData.detailedHeightMap.size()) {
             uiUtils->updateImage(
-                1, Fwg::Gfx::Bitmap(cfg.width, cfg.height, 24,
+                1, Fwg::Gfx::Image(cfg.width, cfg.height, 24,
                                     fwg.layerData[selectedLayer]));
           }
           updateLayer = false;
@@ -609,13 +609,13 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           if (fwg.terrainData.landMask.size()) {
             uiUtils->updateImage(1, Fwg::Gfx::landMask(fwg.terrainData));
           } else {
-            uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+            uiUtils->updateImage(1, Fwg::Gfx::Image());
           }
         }
       } else {
 
-        uiUtils->updateImage(0, Fwg::Gfx::Bitmap());
-        uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+        uiUtils->updateImage(0, Fwg::Gfx::Image());
+        uiUtils->updateImage(1, Fwg::Gfx::Image());
       }
     }
     static bool layeredit = false;
@@ -772,7 +772,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                          : "Generate land classification from heightmap";
     if (ImGui::Button(str)) {
       if (cfg.complexLandInput) {
-        fwg.genHeightFromInput(cfg, cfg.mapsPath + "//classifiedLandInput.bmp");
+        fwg.genHeightFromInput(cfg, cfg.mapsPath + "//classifiedLandInput.png");
         uiUtils->updateImage(
             0, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
         uiUtils->updateImage(1, Fwg::Gfx::landMask(fwg.terrainData));
@@ -824,7 +824,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-void FwgUI::clearColours(Fwg::Gfx::Bitmap &image) {
+void FwgUI::clearColours(Fwg::Gfx::Image &image) {
   static int severity = 0;
   // first count every colour in a colourTMap
   Utils::ColourTMap<std::vector<int>> colourCounter;
@@ -991,7 +991,7 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     static int amountClassificationsNeeded = 0;
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, climateUI.climateInputMap);
-      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+      uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     ImGui::SeparatorText("This step is OPTIONAL! You can also generate a "
                          "random climate in the next tab");
@@ -1048,7 +1048,7 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         cfg.complexClimateInput = true;
         Fwg::Gfx::Bmp::save(climateUI.climateInputMap,
-                            cfg.mapsPath + "//classifiedClimateInput.bmp");
+                            cfg.mapsPath + "//classifiedClimateInput.png");
         fwg.loadClimate(cfg, climateUI.climateInputMap);
         uiUtils->resetTexture();
         return true;
@@ -1068,7 +1068,7 @@ int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(
           0, Fwg::Gfx::Climate::displayTemperature(fwg.climateData));
-      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+      uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     uiUtils->showHelpTextBox("Temperature");
 
@@ -1101,7 +1101,7 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0,
                            Fwg::Gfx::Climate::displayHumidity(fwg.climateData));
-      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+      uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     uiUtils->showHelpTextBox("Humidity");
     ImGui::SeparatorText(
@@ -1138,7 +1138,7 @@ int FwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (uiUtils->tabSwitchEvent()) {
       uiUtils->updateImage(0, Gfx::riverMap(fwg.terrainData.detailedHeightMap,
                                             fwg.climateData.rivers));
-      uiUtils->updateImage(1, Fwg::Gfx::Bitmap());
+      uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     uiUtils->showHelpTextBox("Rivers");
     if (!fwg.climateData.humidities.size()) {
@@ -1406,7 +1406,7 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::PushItemWidth(300.0f);
     if (ImGui::Button("Generate SuperSegments from landbodies and ocean/water "
                       "segments") ||
-        (fwg.climateData.habitabilities.size() == cfg.bitmapSize &&
+        (fwg.climateData.habitabilities.size() == cfg.processingArea &&
          fwg.areaData.superSegments.empty() && !computationRunning)) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         fwg.genSuperSegments(cfg);

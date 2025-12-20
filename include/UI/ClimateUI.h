@@ -20,12 +20,12 @@ class ClimateUI {
 public:
   bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData);
   bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                         const Fwg::Gfx::Bitmap &climateInput,
+                         const Fwg::Gfx::Image &climateInput,
                          int &amountClassificationsNeeded);
   bool complexTerrainMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                              bool &analyze, int &amountClassificationsNeeded);
 
-  Fwg::Gfx::Bitmap climateInputMap;
+  Fwg::Gfx::Image climateInputMap;
   Fwg::Utils::ColourTMap<ClimateInput> climateInputColours;
   Fwg::Utils::ColourTMap<Fwg::Climate::ClimateClassDefinition> allowedClimateInputs;
 };

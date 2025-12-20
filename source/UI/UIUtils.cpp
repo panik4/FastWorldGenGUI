@@ -63,7 +63,7 @@ UIUtils::getAffectedPixels(const ClickEvent &clickEvent) {
   std::vector<std::pair<ClickEvent, double>> affectedPixels;
   for (int i = 0; i < clickOffsets.size(); i++) {
     auto pix = clickEvent.pixel + clickOffsets[i];
-    if (pix < cfg.bitmapSize && pix >= 0) {
+    if (pix < cfg.processingArea && pix >= 0) {
       auto strength = brushStrength; /* *
           (brushHardness + (1.0 - brushHardness) * (1.0 - clickStrengths[i]));*/
       affectedPixels.push_back(
@@ -130,7 +130,7 @@ bool UIUtils::tabSwitchEvent(bool processClickEvents) {
   return updateTexture1 || updateTexture2;
 }
 
-void UIUtils::updateImage(int index, const Fwg::Gfx::Bitmap &image) {
+void UIUtils::updateImage(int index, const Fwg::Gfx::Image &image) {
   auto &texture = (index == 0) ? primaryTexture : secondaryTexture;
   auto &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
 
@@ -160,12 +160,6 @@ void UIUtils::updateImage(int index, const Fwg::Gfx::Bitmap &image) {
   }
 }
 
-//
-// void UIUtils::dirtyTextureUpdate(int index, const Fwg::Gfx::Bitmap &image) {
-//
-//
-//}
-
 void UIUtils::freeTexture(ID3D11ShaderResourceView **texture) {
   if ((*texture) != nullptr) {
     (*texture)->Release();
@@ -175,7 +169,7 @@ void UIUtils::freeTexture(ID3D11ShaderResourceView **texture) {
 
 // Simple helper function to load an image into a DX11 texture with common
 // settings
-bool UIUtils::getResourceView(const Fwg::Gfx::Bitmap &image,
+bool UIUtils::getResourceView(const Fwg::Gfx::Image &image,
                               ID3D11ShaderResourceView **out_srv,
                               int *out_width, int *out_height,
                               ID3D11Device *g_pd3dDevice) {

@@ -26,7 +26,7 @@ private:
 public:
   std::map<std::string, std::string> helpTexts;
   std::map<std::string, std::string> advancedHelpTexts;
-  std::map<std::string, Fwg::Gfx::Bitmap> advancedHelpImages;
+  std::map<std::string, Fwg::Gfx::Image> advancedHelpImages;
   std::map<std::string, float> advancedHelpTexturesAspectRatio;
   std::map<std::string, ID3D11ShaderResourceView *> advancedHelpTextures;
 
@@ -41,7 +41,7 @@ public:
   int textureWidth;
   int textureHeight;
 
-  std::array<Fwg::Gfx::Bitmap, 2> activeImages;
+  std::array<Fwg::Gfx::Image, 2> activeImages;
   void resetTexture();
   void setForceUpdate() { forceUpdate = true; }
   bool getForceUpdate() {
@@ -91,11 +91,11 @@ public:
   }
 
   bool tabSwitchEvent(bool processClickEvents = false);
-  void updateImage(int index, const Fwg::Gfx::Bitmap &image);
+  void updateImage(int index, const Fwg::Gfx::Image &image);
 
   void freeTexture(ID3D11ShaderResourceView **texture);
   // texture utils
-  bool getResourceView(const Fwg::Gfx::Bitmap &image,
+  bool getResourceView(const Fwg::Gfx::Image &image,
                        ID3D11ShaderResourceView **out_srv, int *out_width,
                        int *out_height, ID3D11Device *g_pd3dDevice);
   ImGuiIO setupImGuiContextAndStyle();

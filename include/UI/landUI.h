@@ -27,13 +27,13 @@ private:
       std::vector<Fwg::Gfx::Colour> &imageData,
       const std::vector<Fwg::Terrain::LandformDefinition> &landformDefinitions);
   bool analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                      const Fwg::Gfx::Bitmap &landInput,
+                      const Fwg::Gfx::Image &landInput,
                       int &amountClassificationsNeeded);
 
 public:
   LandUI();
   LandUI(std::shared_ptr<UIUtils> uiUtils);
-  Fwg::Gfx::Bitmap landInput;
+  Fwg::Gfx::Image landInput;
   std::string loadedTerrainFile;
   bool classificationNeeded = true;
   void complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,

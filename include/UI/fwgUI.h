@@ -72,12 +72,12 @@ protected:
     }
   }
 
-  void disableBlock(const Fwg::Gfx::Bitmap &bitmap);
-  void reenableBlock(const Fwg::Gfx::Bitmap &bitmap);
+  void disableBlock(const Fwg::Gfx::Image &image);
+  void reenableBlock(const Fwg::Gfx::Image &image);
   void initAllowedInput(Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
                         std::vector<Terrain::LandformDefinition> &landformDefinitions);
 
-  void clearColours(Fwg::Gfx::Bitmap &image);
+  void clearColours(Fwg::Gfx::Image &image);
   virtual int showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showFwgConfigure(Fwg::Cfg &cfg);
