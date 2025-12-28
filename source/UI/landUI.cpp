@@ -321,11 +321,18 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
 void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                                 const std::string &draggedFile,
-                                bool classifyInput) {
+                                const Fwg::Terrain::InputMode &inputMode) {
   // if (fwg.heightMap.initialised() && !classifyInput) {
   //   ImGui::OpenPopup("Drag info");
   // } else
-  if (classifyInput) {
+  if (inputMode == Fwg::Terrain::InputMode::SIMPLE) {
+    fwg.resetData();
+    fwg.genHeightFromInput(cfg, draggedFile, inputMode);
+    fwg.genLand();
+    // buffer this path in case we want to regen heightmap from this
+    loadedTerrainFile = draggedFile;
+
+  } else {
     fwg.resetData();
     fwg.configure(cfg);
     // don't immediately generate from the input, instead allow to manually
@@ -335,14 +342,23 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     //   Utils::Logging::logLine("Invalid resolution for land input image");
     //   landInput.clear();
     // }
+    std::string outputPath = "";
+    switch (inputMode) {
+    case Fwg::Terrain::InputMode::HEIGHTMAP:
+      outputPath = cfg.mapsPath + "//heightmapInput.png";
+      break;
+    case Fwg::Terrain::InputMode::TOPOGRAPHY:
+      outputPath = cfg.mapsPath + "//topographyInput.png";
+      break;
+    case Fwg::Terrain::InputMode::LANDFORM:
+      outputPath = cfg.mapsPath + "//landformInput.png";
+      break;
+    default:
+      break;
+    }
+
     //  save the landmap to classifiedLandInput.png
-    Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "//classifiedLandInput.png");
-  } else {
-    fwg.resetData();
-    fwg.genHeightFromInput(cfg, draggedFile);
-    fwg.genLand();
-    // buffer this path in case we want to regen heightmap from this
-    loadedTerrainFile = draggedFile;
+    Fwg::Gfx::Png::save(landInput, outputPath);
   }
 
   uiUtils->resetTexture();
@@ -387,9 +403,9 @@ void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 void LandUI::configureLandElevationFactors(Fwg::Cfg &cfg,
                                            Fwg::FastWorldGenerator &fwg) {
-  if (cfg.complexLandInput) {
+  if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
     ImGui::SeparatorText("Land Elevation Factors");
-    const float labelWidth = 10.0f; // reserve space for label
+    const float labelWidth = 10.0f;  // reserve space for label
     const float inputWidth = 100.0f; // fixed input box width
     const int itemsPerRow = 3;
     int counter = 0;

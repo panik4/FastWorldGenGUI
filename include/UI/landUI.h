@@ -41,7 +41,8 @@ public:
   Fwg::Utils::ColourTMap<ElevationInput> landInputColours;
   Fwg::Utils::ColourTMap<Fwg::Terrain::LandformDefinition> allowedLandInputs;
   void triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                          const std::string &draggedFile, bool classifyInput);
+                          const std::string &draggedFile,
+                          const Fwg::Terrain::InputMode &inputMode);
   void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void configureLandElevationFactors(Fwg::Cfg &cfg,
                                      Fwg::FastWorldGenerator &fwg);

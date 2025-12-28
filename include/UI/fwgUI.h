@@ -34,8 +34,7 @@ protected:
   }
 
 
-
-
+  
   std::atomic<bool> computationRunning;
   std::atomic<bool> computationStarted;
   std::future<void> computationFuture;
@@ -63,6 +62,11 @@ protected:
   bool redoProvinces = false;
   bool modifiedAreas = false;
 
+  
+  std::vector<std::string> heightmapConfigFiles;
+
+
+
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiUtils->activeImages[0].size() && uiUtils->activeImages[0].size()) {
       std::string path = cfg.mapsPath + "//";
@@ -78,6 +82,9 @@ protected:
                         std::vector<Terrain::LandformDefinition> &landformDefinitions);
 
   void clearColours(Fwg::Gfx::Image &image);
+
+  void loadHeightmapConfigs();
+
   virtual int showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showFwgConfigure(Fwg::Cfg &cfg);
