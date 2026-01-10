@@ -3,26 +3,26 @@
 #include <imgui.h>
 #include <string>
 
-namespace UI {
+namespace Fwg::UI {
 
-class Elements {
-public:
+namespace Elements {
   // Begin a prominently styled MAIN tab bar
-  static bool BeginMainTabBar(const std::string &label);
+  bool BeginMainTabBar(const std::string &label);
 
   // End the MAIN tab bar
-  static void EndMainTabBar();
+  void EndMainTabBar();
 
   // Begin a visually distinct SUB tab bar
-  static bool BeginSubTabBar(const std::string &label, float height = 0.0f);
+  bool BeginSubTabBar(const std::string &label, float height = 0.0f);
 
   // End the SUB tab bar
-  static void EndSubTabBar();
+  void EndSubTabBar();
 
-  static bool BeginMainTabItem(const std::string &label,
+  bool BeginMainTabItem(const std::string &label,
                                const bool highlight = false);
 
-  static bool BeginSubTabItem(const std::string &label, const bool highlight = false);
+  bool BeginSubTabItem(const std::string &label,
+                              const bool highlight = false);
 
   // Stylized button (e.g., red = important)
   static bool Button(const std::string &label, bool emphasize = false,
@@ -220,4 +220,4 @@ public:
   }
 };
 
-} // namespace UI
+} // namespace Fwg::UI

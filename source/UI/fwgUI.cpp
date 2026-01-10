@@ -714,8 +714,9 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     ImGui::SliderFloat("<--Width edge Factor", &cfg.heightmapWidthEdgeModifier,
                        0.0f, 10.0f, "ratio = %.1f");
-    ImGui::SliderFloat("<--Height edge Factor", &cfg.heightmapHeightEdgeModifier,
-                       0.0f, 10.0f, "ratio = %.1f");
+    ImGui::SliderFloat("<--Height edge Factor",
+                       &cfg.heightmapHeightEdgeModifier, 0.0f, 10.0f,
+                       "ratio = %.1f");
     ImGui::Checkbox("<--Layer edit", &layeredit);
     if (layeredit) {
       ImGui::SeparatorText(
@@ -1481,6 +1482,7 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
+static bool borderInput = false;
 void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("SuperSegments")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -1493,10 +1495,13 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("SuperSegments");
 
     ImGui::PushItemWidth(300.0f);
+    ImGui::Checkbox("Activate border input", &borderInput);
+    if (ImGui::Button("Generate supersegment template images to draw in.")) {
+      Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
+                                            fwg.worldMap, true, false, false);
+    }
     if (ImGui::Button("Generate SuperSegments from landbodies and ocean/water "
-                      "segments") ||
-        (fwg.climateData.habitabilities.size() == cfg.processingArea &&
-         fwg.areaData.superSegments.empty() && !computationRunning)) {
+                      "segments")) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         fwg.genSuperSegments(cfg);
         uiUtils->resetTexture();
@@ -1508,19 +1513,27 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (triggeredDrag) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           triggeredDrag = false;
-          std::vector<std::vector<int>> evaluationAreas(2);
-          for (int i = 0; auto pix : fwg.terrainData.landMask) {
-            if (pix) {
-              evaluationAreas[0].push_back(i);
-            } else {
-              evaluationAreas[1].push_back(i);
-            }
-            i++;
-          }
+          auto evaluationAreas =
+              Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                  fwg.terrainData.landMask);
+          if (!borderInput) {
+            fwg.loadSuperSegments(cfg,
+                                  Fwg::IO::Reader::readGenericImageWithBorders(
+                                      draggedFile, cfg, evaluationAreas));
+          } else {
+            auto image = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
 
-          fwg.loadSuperSegments(cfg,
-                                Fwg::IO::Reader::readGenericImageWithBorders(
-                                    draggedFile, cfg, evaluationAreas));
+            // detect all areas, give them unique colours
+            Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
+                image, evaluationAreas);
+            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test.png");
+
+            // now that we have modified the input image with colours filling
+            // the areas between borders, we can remove the borders
+            Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
+            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test2.png");
+            fwg.loadSuperSegments(cfg, image);
+          }
           uiUtils->resetTexture();
           return true;
         });
@@ -1547,6 +1560,7 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("Segments");
 
     ImGui::PushItemWidth(300.0f);
+    ImGui::Checkbox("Activate border input", &borderInput);
     // To change the segmentCostInfluence value
     ImGui::InputDouble("Segment Cost Influence", &cfg.segmentCostInfluence,
                        0.01, 0.1);
@@ -1570,6 +1584,10 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       ImGui::Text("The map has %i lake segments",
                   static_cast<int>(fwg.areaData.lakeSegments));
 
+      if (ImGui::Button("Generate segment template images to draw in.")) {
+        Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
+                                              fwg.worldMap, false, true, false);
+      }
       // Button to generate segments
       if (ImGui::Button("Generate Segments")) {
 
@@ -1583,8 +1601,25 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (triggeredDrag) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           modifiedAreas = true;
-          fwg.loadSegments(cfg,
-                           Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
+          auto evaluationAreas =
+              Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                  fwg.terrainData.landMask);
+          if (!borderInput) {
+            fwg.loadSegments(cfg, Fwg::IO::Reader::readGenericImageWithBorders(
+                                      draggedFile, cfg, evaluationAreas));
+          } else {
+            auto image = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
+
+            // detect all areas, give them unique colours
+            Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
+                image, evaluationAreas);
+            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test1.png");
+            // now that we have modified the input image with colours filling
+            // the areas between borders, we can remove the borders
+            Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
+            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test2.png");
+            fwg.loadSegments(cfg, image);
+          }
           fwg.segmentMap =
               Fwg::Gfx::Segments::displaySegments(fwg.areaData.segments);
           triggeredDrag = false;
@@ -1616,6 +1651,7 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         fwg.climateData.habitabilities.size()) {
       ImGui::PushItemWidth(200.0f);
       ImGui::SeparatorText("Generate a province map or drop it in");
+      ImGui::Checkbox("Activate border input", &borderInput);
       ImGui::InputDouble("Landprovincefactor", &cfg.landProvFactor, 0.1);
       ImGui::InputDouble("Seaprovincefactor", &cfg.seaProvFactor, 0.1);
       ImGui::InputDouble("Density Effects", &cfg.provinceDensityEffects, 0.1f);
@@ -1630,6 +1666,10 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           std::clamp(cfg.provinceDensityEffects, 0.0, 1.0);
       ImGui::Text("The map has %i provinces",
                   static_cast<int>(fwg.areaData.provinces.size()));
+      if (ImGui::Button("Generate province template images to draw in.")) {
+        Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
+                                              fwg.worldMap, false, false, true);
+      }
       if (ImGui::Button("Generate Provinces Map")) {
         modifiedAreas = true;
         cfg.calcAreaParameters();
@@ -1643,10 +1683,32 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         // redoRegions = true;
       }
       if (triggeredDrag) {
-        modifiedAreas = true;
-        triggeredDrag = false;
-        fwg.loadProvinces(cfg, draggedFile);
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          modifiedAreas = true;
+          triggeredDrag = false;
+          auto evaluationAreas =
+              Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                  fwg.terrainData.landMask);
+          if (!borderInput) {
+            fwg.loadProvinces(cfg, Fwg::IO::Reader::readGenericImageWithBorders(
+                                       draggedFile, cfg, evaluationAreas));
+          } else {
+            auto image = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
+
+            // detect all areas, give them unique colours
+            Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
+                image, evaluationAreas);
+            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test1.png");
+
+            // now that we have modified the input image with colours filling
+            // the areas between borders, we can remove the borders
+            Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
+            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test2.png");
+            fwg.loadProvinces(cfg, image);
+          }
+          uiUtils->resetTexture();
+          return true;
+        });
       }
     } else {
       ImGui::SeparatorText("Generator other maps first");
@@ -1726,11 +1788,17 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
       // drag event
       if (triggeredDrag) {
-        modifiedAreas = true;
-        fwg.loadContinents(cfg,
-                           Fwg::IO::Reader::readGenericImage(draggedFile, cfg));
-        triggeredDrag = false;
-        uiUtils->resetTexture();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          modifiedAreas = true;
+          auto evaluationAreas =
+              Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                  fwg.terrainData.landMask);
+          fwg.loadContinents(cfg, Fwg::IO::Reader::readGenericImageWithBorders(
+                                      draggedFile, cfg, evaluationAreas));
+          triggeredDrag = false;
+          uiUtils->resetTexture();
+          return true;
+        });
       }
     } else {
       if (!fwg.areaData.landBodies.size()) {

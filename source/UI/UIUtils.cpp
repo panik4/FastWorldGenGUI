@@ -6,7 +6,7 @@ void UIUtils::imageClick(float scale, ImGuiIO &io) {
     return;
   }
   // Check if the mouse is clicked on the image
-  if ((ImGui::IsItemHovered()  && ImGui::IsMouseReleased(0) ||
+  if ((ImGui::IsItemHovered() && ImGui::IsMouseReleased(0) ||
        ImGui::IsMouseReleased(1))) {
     // Determine which mouse button was pressed
     auto pressedKey =
@@ -278,7 +278,24 @@ void UIUtils::shutdownImGui() {
   ImGui::DestroyContext();
 }
 
-void Elements::borderChild(const std::string &label,
+namespace Fwg::UI::Utils::Masks {
+std::vector<std::vector<int>>
+getLandmaskEvaluationAreas(std::vector<bool> &mask) {
+  std::vector<std::vector<int>> evaluationAreas(2);
+  for (int i = 0; auto pix : mask) {
+    if (pix) {
+      evaluationAreas[0].push_back(i);
+    } else {
+      evaluationAreas[1].push_back(i);
+    }
+    i++;
+  }
+  return evaluationAreas;
+}
+
+} // namespace Masks
+
+void Fwg::UI::Elements::borderChild(const std::string &label,
                            const std::function<void()> &guiCalls) {
   {
     ::ImGui::BeginChild(label.c_str(), ImVec2(400, 150),
@@ -350,7 +367,7 @@ void UIUtils::showHelpTextBox(const std::string &key) {
                            ImGui::GetContentRegionAvail().y * 0.1f),
                     false);
   activeKey = key;
-  if (UI::Elements::HelpButton("Extended Help")) {
+  if (Fwg::UI::Elements::HelpButton("Extended Help")) {
     showExtendedHelp = !showExtendedHelp;
   }
   // display help text in a text box

@@ -51,7 +51,6 @@ public:
     }
     return false;
   }
-  void dirtyTextureUpdate();
   bool getDrawMode() { return drawMode; }
   void setDrawMode(bool mode) { drawMode = mode; }
   bool processClickEventsEnabled() { return processClickEvents; }
@@ -114,7 +113,13 @@ public:
   void showAdvancedTextBox();
 };
 
-namespace Elements {
+namespace Fwg::UI::Utils::Masks {
+std::vector<std::vector<int>>
+getLandmaskEvaluationAreas(std::vector<bool> &mask);
+}
+
+
+namespace Fwg::UI::Elements {
 void borderChild(const std::string &label,
                  const std::function<void()> &guiCalls);
 

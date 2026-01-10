@@ -1,5 +1,5 @@
 #include "UI/UiElements.h"
-namespace UI {
+namespace Fwg::UI {
 bool Elements::BeginMainTabBar(const std::string &label) {
   // Emphasized color theme for main navigation
   ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.35f, 0.37f, 0.55f, 1.0f));
