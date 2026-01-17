@@ -839,8 +839,13 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     default:
       break;
     }
-
+    static bool rerandomiseSeed = false;
+    ImGui::Checkbox("Change seed on every generation click", &rerandomiseSeed);
     if (ImGui::Button(buttonText2)) {
+      if (rerandomiseSeed) {
+        cfg.randomSeed = true;
+        cfg.reRandomize();
+      }
       if (cfg.landInputMode != Fwg::Terrain::InputMode::SIMPLE) {
         auto inputPath = cfg.mapsPath + "//classifiedLandInput.png";
         switch (cfg.landInputMode) {
