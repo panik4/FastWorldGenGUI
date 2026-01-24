@@ -577,14 +577,14 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
                               "mappedInput.json");
     }
-
-    ImGui::RadioButton("Topography", cfg.landInputMode ==
-                                         Fwg::Terrain::InputMode::TOPOGRAPHY);
-    if (ImGui::IsItemClicked()) {
-      cfg.landInputMode = Fwg::Terrain::InputMode::TOPOGRAPHY;
-      cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
-                              "mappedInput.json");
-    }
+    // Not really supported yet
+    //ImGui::RadioButton("Topography", cfg.landInputMode ==
+    //                                     Fwg::Terrain::InputMode::TOPOGRAPHY);
+    //if (ImGui::IsItemClicked()) {
+    //  cfg.landInputMode = Fwg::Terrain::InputMode::TOPOGRAPHY;
+    //  cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
+    //                          "mappedInput.json");
+    //}
 
     ImGui::RadioButton("Landform",
                        cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM);
@@ -625,6 +625,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static bool updateLayer = false;
   static int selectedLayer = 0;
+  static bool rerandomiseSeed = false;
   if (UI::Elements::BeginSubTabItem("Heightmap")) {
     if (uiUtils->tabSwitchEvent()) {
       if (fwg.terrainData.detailedHeightMap.size()) {
@@ -787,6 +788,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
     }
     ImGui::SeparatorText("Generate using buttons or drop in file");
+    ImGui::Checkbox("Change seed on every generation click", &rerandomiseSeed);
     std::string buttonText =
         "Generate land shape from seed " + std::to_string(cfg.mapSeed);
     if (landUI.loadedTerrainFile.size()) {
@@ -794,6 +796,11 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     if (cfg.landInputMode == Fwg::Terrain::InputMode::SIMPLE &&
         ImGui::Button(buttonText.c_str())) {
+      if (rerandomiseSeed) {
+        cfg.randomSeed = true;
+        cfg.reRandomize();
+      }
+
       // we have dragged in a terrain map before, if we generate, we just want
       // to generate with changed parameters
       // This case is only used in case of simple input
@@ -825,10 +832,10 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       ImGui::BeginDisabled();
     }
 
-    const char *buttonText2 = "Generate landmask from heightmap";
+    const char *buttonText2 = "Generate detailed heightmap from shape";
     switch (cfg.landInputMode) {
     case Fwg::Terrain::InputMode::HEIGHTMAP:
-      buttonText2 = "Generate landmask from heightmap";
+      buttonText2 = "Generate detailed heightmap from shape";
       break;
     case Fwg::Terrain::InputMode::TOPOGRAPHY:
       buttonText2 = "Generate landmask from topography";
@@ -839,8 +846,6 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     default:
       break;
     }
-    static bool rerandomiseSeed = false;
-    ImGui::Checkbox("Change seed on every generation click", &rerandomiseSeed);
     if (ImGui::Button(buttonText2)) {
       if (rerandomiseSeed) {
         cfg.randomSeed = true;
@@ -1198,6 +1203,9 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("Humidity");
     ImGui::SeparatorText(
         "Generate humidity map or drop it in. You can also draw in this map");
+    static bool applyEleveationEffect = false;
+    ImGui::Checkbox("<--Apply elevation effect when loading humidity",
+                    &applyEleveationEffect);
     if (ImGui::Button("Generate Humidity Map")) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         fwg.genHumidity(cfg);
@@ -1205,9 +1213,6 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         return true;
       });
     }
-    static bool applyEleveationEffect = false;
-    ImGui::Checkbox("<--Apply elevation effect when loading humidity",
-                    &applyEleveationEffect);
     // drag event
     if (triggeredDrag) {
       fwg.loadHumidity(cfg, Fwg::IO::Reader::readGenericImage(draggedFile, cfg),
@@ -1531,12 +1536,10 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
             // detect all areas, give them unique colours
             Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
                 image, evaluationAreas);
-            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test.png");
 
             // now that we have modified the input image with colours filling
             // the areas between borders, we can remove the borders
             Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
-            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test2.png");
             fwg.loadSuperSegments(cfg, image);
           }
           uiUtils->resetTexture();
@@ -1703,12 +1706,10 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
             // detect all areas, give them unique colours
             Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
                 image, evaluationAreas);
-            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test1.png");
 
             // now that we have modified the input image with colours filling
             // the areas between borders, we can remove the borders
             Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
-            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test2.png");
             fwg.loadProvinces(cfg, image);
           }
           uiUtils->resetTexture();
