@@ -361,11 +361,12 @@ void UIUtils::loadHelpImagesFromPath(const std::string &path) {
     }
   }
 }
-void UIUtils::showHelpTextBox(const std::string &key) {
+void UIUtils::showHelpTextBox(const std::string &key, bool switchkey) {
   ImGui::BeginChild("Help Box",
                     ImVec2(ImGui::GetContentRegionAvail().x,
                            ImGui::GetContentRegionAvail().y * 0.1f),
                     false);
+
   activeKey = key;
   if (Fwg::UI::Elements::HelpButton("Extended Help")) {
     showExtendedHelp = !showExtendedHelp;

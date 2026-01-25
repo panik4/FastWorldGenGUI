@@ -86,6 +86,7 @@ protected:
   void loadHeightmapConfigs();
 
   virtual int showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+  void areaInputSelector(Fwg::Cfg &cfg);
   int showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showFwgConfigure(Fwg::Cfg &cfg);
   int showCutCfg(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);

@@ -535,6 +535,20 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return true;
 }
 
+void FwgUI::areaInputSelector(Fwg::Cfg& cfg) {
+  ImGui::TextUnformatted("Area Input Mode");
+
+  ImGui::RadioButton("Solid", cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID);
+  if (ImGui::IsItemClicked()) {
+    cfg.areaInputMode = Fwg::Areas::AreaInputType::SOLID;
+  }
+  ImGui::RadioButton("Borders",
+                     cfg.areaInputMode == Fwg::Areas::AreaInputType::BORDERS);
+  if (ImGui::IsItemClicked()) {
+    cfg.areaInputMode = Fwg::Areas::AreaInputType::BORDERS;
+  }
+}
+
 int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
   if (UI::Elements::BeginMainTabItem("Land Tabs")) {
@@ -562,12 +576,12 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     //  Selection of land input mode
     ImGui::TextUnformatted("Land Input Mode");
 
-    ImGui::RadioButton("Simple",
-                       cfg.landInputMode == Fwg::Terrain::InputMode::SIMPLE);
+    ImGui::RadioButton("Shape",
+                       cfg.landInputMode == Fwg::Terrain::InputMode::SHAPE);
     if (ImGui::IsItemClicked()) {
       cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
                               "default.json");
-      cfg.landInputMode = Fwg::Terrain::InputMode::SIMPLE;
+      cfg.landInputMode = Fwg::Terrain::InputMode::SHAPE;
     }
 
     ImGui::RadioButton("Heightmap",
@@ -681,7 +695,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         ImGui::SetItemDefaultFocus();
     }
 
-    if (cfg.landInputMode == Fwg::Terrain::InputMode::SIMPLE) {
+    if (cfg.landInputMode == Fwg::Terrain::InputMode::SHAPE) {
       // UI::Elements::LabeledInputInt("SeaLevel", cfg.seaLevel, 1, 10, 0, 255);
       // UI::Elements::LabeledInputInt("SeaLevel", cfg.seaLevel, 1, 10, 0, 255);
       // ImGui::SliderFloat("<--Landpercentage", &cfg.landPercentage,
@@ -794,7 +808,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (landUI.loadedTerrainFile.size()) {
       buttonText = "Regenerate land shape from simple input";
     }
-    if (cfg.landInputMode == Fwg::Terrain::InputMode::SIMPLE &&
+    if (cfg.landInputMode == Fwg::Terrain::InputMode::SHAPE &&
         ImGui::Button(buttonText.c_str())) {
       if (rerandomiseSeed) {
         cfg.randomSeed = true;
@@ -851,7 +865,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         cfg.randomSeed = true;
         cfg.reRandomize();
       }
-      if (cfg.landInputMode != Fwg::Terrain::InputMode::SIMPLE) {
+      if (cfg.landInputMode != Fwg::Terrain::InputMode::SHAPE) {
         auto inputPath = cfg.mapsPath + "//classifiedLandInput.png";
         switch (cfg.landInputMode) {
         case Fwg::Terrain::InputMode::HEIGHTMAP:
@@ -891,7 +905,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       ImGui::EndDisabled();
     }
 
-    if (cfg.landInputMode == Fwg::Terrain::InputMode::SIMPLE &&
+    if (cfg.landInputMode == Fwg::Terrain::InputMode::SHAPE &&
         ImGui::Button("Generate complete random heightmap from new seed")) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         cfg.randomSeed = true;
@@ -924,7 +938,7 @@ void FwgUI::clearColours(Fwg::Gfx::Image &image) {
   Utils::ColourTMap<std::vector<int>> colourCounter;
   for (int pix = 0; pix < image.size(); pix++) {
     const auto &col = image[pix];
-    if (!colourCounter.find(col)) {
+    if (!colourCounter.contains(col)) {
       colourCounter.setValue(col, {});
       colourCounter[col].push_back(pix);
     } else {
@@ -1108,7 +1122,7 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
         // preprocess input to convert to primary colours where possible
         for (auto &col : climateUI.climateInputMap.imageData) {
-          if (secondaryToPrimary.find(col)) {
+          if (secondaryToPrimary.contains(col)) {
             col = secondaryToPrimary[col].primaryColour;
           }
         }
@@ -1438,6 +1452,7 @@ int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         });
       }
     }
+    areaInputSelector(cfg);
     if (UI::Elements::BeginSubTabBar("Area Tabs", 0.0f)) {
       showDensityTab(cfg, fwg);
       showSuperSegmentTab(cfg, fwg);
@@ -1492,7 +1507,6 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-static bool borderInput = false;
 void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("SuperSegments")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -1505,7 +1519,6 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("SuperSegments");
 
     ImGui::PushItemWidth(300.0f);
-    ImGui::Checkbox("Activate border input", &borderInput);
     if (ImGui::Button("Generate supersegment template images to draw in.")) {
       Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
                                             fwg.worldMap, true, false, false);
@@ -1526,7 +1539,7 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           auto evaluationAreas =
               Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                   fwg.terrainData.landMask);
-          if (!borderInput) {
+          if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
             fwg.loadSuperSegments(cfg,
                                   Fwg::IO::Reader::readGenericImageWithBorders(
                                       draggedFile, cfg, evaluationAreas));
@@ -1568,7 +1581,6 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     uiUtils->showHelpTextBox("Segments");
 
     ImGui::PushItemWidth(300.0f);
-    ImGui::Checkbox("Activate border input", &borderInput);
     // To change the segmentCostInfluence value
     ImGui::InputDouble("Segment Cost Influence", &cfg.segmentCostInfluence,
                        0.01, 0.1);
@@ -1612,7 +1624,7 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           auto evaluationAreas =
               Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                   fwg.terrainData.landMask);
-          if (!borderInput) {
+          if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
             fwg.loadSegments(cfg, Fwg::IO::Reader::readGenericImageWithBorders(
                                       draggedFile, cfg, evaluationAreas));
           } else {
@@ -1659,7 +1671,6 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         fwg.climateData.habitabilities.size()) {
       ImGui::PushItemWidth(200.0f);
       ImGui::SeparatorText("Generate a province map or drop it in");
-      ImGui::Checkbox("Activate border input", &borderInput);
       ImGui::InputDouble("Landprovincefactor", &cfg.landProvFactor, 0.1);
       ImGui::InputDouble("Seaprovincefactor", &cfg.seaProvFactor, 0.1);
       ImGui::InputDouble("Density Effects", &cfg.provinceDensityEffects, 0.1f);
@@ -1697,7 +1708,7 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           auto evaluationAreas =
               Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                   fwg.terrainData.landMask);
-          if (!borderInput) {
+          if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
             fwg.loadProvinces(cfg, Fwg::IO::Reader::readGenericImageWithBorders(
                                        draggedFile, cfg, evaluationAreas));
           } else {

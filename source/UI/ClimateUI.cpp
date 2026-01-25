@@ -177,9 +177,9 @@ bool ClimateUI::analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   // init and count colours
   for (auto &colour : climateInput.imageData) {
     // first count classifications
-    if (climateInputColours.find(colour) &&
+    if (climateInputColours.contains(colour) &&
         climateInputColours[colour].pixels.size() == 0 &&
-        !allowedClimateInputs.find(colour)) {
+        !allowedClimateInputs.contains(colour)) {
       amountClassificationsNeeded++;
     }
 
@@ -188,11 +188,11 @@ bool ClimateUI::analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         ((float)colour.getBlue()) / 255.0f, 1.0f);
     // check if the input is of permitted colours or first needs to be
     // classified
-    if (!allowedClimateInputs.find(colour)) {
+    if (!allowedClimateInputs.contains(colour)) {
       // this input colour is not classified yet
       classificationNeeded = true;
       // if we haven't set this colour yet
-      if (!climateInputColours.find(colour)) {
+      if (!climateInputColours.contains(colour)) {
         // set it
         climateInputColours.setValue(
             colour, ClimateInput{colour, colour, "Unclassified",
@@ -210,7 +210,7 @@ bool ClimateUI::analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     // detailed climateInput
     else {
       // if we haven't set this colour yet
-      if (!climateInputColours.find(colour)) {
+      if (!climateInputColours.contains(colour)) {
         // set it with its valid output colour
         climateInputColours.setValue(
             colour,
@@ -237,7 +237,7 @@ bool ClimateUI::complexTerrainMapping(Fwg::Cfg &cfg,
   // Update names of entries based on classification
   for (auto &cl : climateInputColours.getMap()) {
     if (cl.second.pixels.size()) {
-      cl.second.rgbName = (allowedClimateInputs.find(cl.second.out)
+      cl.second.rgbName = (allowedClimateInputs.contains(cl.second.out)
                                ? allowedClimateInputs[cl.second.out].name
                                : "Unclassified");
     }

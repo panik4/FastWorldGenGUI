@@ -232,9 +232,9 @@ bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   // init and count colours
   for (auto &colour : landInput.imageData) {
     // first count classifications
-    if (landInputColours.find(colour) &&
+    if (landInputColours.contains(colour) &&
         landInputColours[colour].pixels.size() == 0 &&
-        !allowedLandInputs.find(colour)) {
+        !allowedLandInputs.contains(colour)) {
       amountClassificationsNeeded++;
     }
 
@@ -243,11 +243,11 @@ bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         ((float)colour.getBlue()) / 255.0f, 1.0f);
     // check if the input is of permitted colours or first needs to be
     // classified
-    if (!allowedLandInputs.find(colour)) {
+    if (!allowedLandInputs.contains(colour)) {
       // this input colour is not classified yet
       classificationNeeded = true;
       // if we haven't set this colour yet
-      if (!landInputColours.find(colour)) {
+      if (!landInputColours.contains(colour)) {
         // set it
         landInputColours.setValue(
             colour, ElevationInput{colour, colour, "Unclassified",
@@ -261,7 +261,7 @@ bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
     } else {
       // if we haven't set this colour yet
-      if (!landInputColours.find(colour)) {
+      if (!landInputColours.contains(colour)) {
         // set it with its valid output colour
         landInputColours.setValue(
             colour,
@@ -291,7 +291,7 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     // only show elems with a size
     if (landInColour.second.pixels.size()) {
       landInColour.second.rgbName =
-          (allowedLandInputs.find(landInColour.second.out)
+          (allowedLandInputs.contains(landInColour.second.out)
                ? allowedLandInputs[landInColour.second.out].name
                : "UNCLASSIFIED");
     }
@@ -325,7 +325,7 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   // if (fwg.heightMap.initialised() && !classifyInput) {
   //   ImGui::OpenPopup("Drag info");
   // } else
-  if (inputMode == Fwg::Terrain::InputMode::SIMPLE) {
+  if (inputMode == Fwg::Terrain::InputMode::SHAPE) {
     fwg.resetData();
     fwg.genHeightFromInput(cfg, draggedFile, inputMode);
     fwg.genLand();

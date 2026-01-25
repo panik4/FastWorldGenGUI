@@ -109,7 +109,7 @@ public:
   void shutdownImGui();
   void loadHelpTextsFromFile(const std::string &filePath);
   void loadHelpImagesFromPath(const std::string &filePath);
-  void showHelpTextBox(const std::string &key);
+  void showHelpTextBox(const std::string &key, bool switchKey=true);
   void showAdvancedTextBox();
 };
 
