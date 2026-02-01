@@ -3,8 +3,8 @@
 #pragma warning(disable : 4996)
 #include "FastWorldGenerator.h"
 #include "UI/FwgUI.h"
-#include "Utils/Logging.h"
-#include "Utils/Utils.h"
+#include "utils/Logging.h"
+#include "utils/Utils.h"
 #include <filesystem>
 
 void dumpInfo(const std::string &error, const std::string &configSubFolder) {
@@ -46,7 +46,7 @@ int main() {
     buffer << f.rdbuf();
     Fwg::Parsing::replaceInStringStream(buffer, "\\", "//");
     pt::read_json(buffer, metaConf);
-  } catch (std::exception e) {
+  } catch (std::exception &e) {
     Fwg::Utils::Logging::logLine("Incorrect config \"MetaConf.json\"");
     Fwg::Utils::Logging::logLine("You can try fixing it yourself. Error is: ",
                                  e.what());
@@ -69,7 +69,7 @@ int main() {
     Fwg::Utils::Logging::logLine("Starting the loading of ",
                                  configSubFolder + "FastWorldGenerator.json");
     config.readConfig(configSubFolder);
-  } catch (std::exception e) {
+  } catch (std::exception &e) {
     Fwg::Utils::Logging::logLine(
         "Incorrect config \"FastWorldGenerator.json\"");
     Fwg::Utils::Logging::logLine("You can try fixing it yourself. Error is: ",
@@ -81,8 +81,10 @@ int main() {
     return -1;
   }
 
-
+  Fwg::Utils::Logging::logLine("Initialising Fwg");
   Fwg::FastWorldGenerator fwg;
+  Fwg::Utils::Logging::logLine("Initialising Fwg UI");
   Fwg::FwgUI ui;
+  Fwg::Utils::Logging::logLine("Calling Fwg UI.shiny");
   ui.shiny(fwg);
 }

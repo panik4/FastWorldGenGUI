@@ -1,50 +1,10 @@
 #include "UI/FwgUI.h"
 
-// Forward declare message handler from imgui_impl_win32.cpp
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd,
-                                                             UINT msg,
-                                                             WPARAM wParam,
-                                                             LPARAM lParam);
 namespace Fwg {
 // Data
-ID3D11Device *FwgUI::g_pd3dDevice = nullptr;
-ID3D11DeviceContext *FwgUI::g_pd3dDeviceContext = nullptr;
-IDXGISwapChain *FwgUI::g_pSwapChain = nullptr;
-UINT g_ResizeWidth = 0, g_ResizeHeight = 0;
-ID3D11RenderTargetView *FwgUI::g_mainRenderTargetView = nullptr;
+int g_ResizeWidth = 0;
+int g_ResizeHeight = 0;
 int FwgUI::seed = 0;
-
-// Win32 message handler
-// You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if
-// dear imgui wants to use your inputs.
-// - When io.WantCaptureMouse is true, do not dispatch mouse input data to your
-// main application, or clear/overwrite your copy of the mouse data.
-// - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to
-// your main application, or clear/overwrite your copy of the keyboard data.
-// Generally you may always pass all inputs to dear imgui, and hide them from
-// your application based on those two flags.
-// LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
-    return true;
-
-  switch (msg) {
-  case WM_SIZE:
-    if (wParam == SIZE_MINIMIZED)
-      return 0;
-    g_ResizeWidth = (UINT)LOWORD(lParam); // Queue resize
-    g_ResizeHeight = (UINT)HIWORD(lParam);
-    return 0;
-  case WM_SYSCOMMAND:
-    if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
-      return 0;
-    break;
-  case WM_DESTROY:
-    ::PostQuitMessage(0);
-    return 0;
-  }
-  return ::DefWindowProcW(hWnd, msg, wParam, lParam);
-}
 
 FwgUI::FwgUI() {
 
@@ -52,48 +12,42 @@ FwgUI::FwgUI() {
   landUI = LandUI(uiUtils);
 }
 
-WNDCLASSEXW FwgUI::initializeWindowClass() {
-  WNDCLASSEXW wc = {sizeof(wc),
-                    CS_CLASSDC,
-                    WndProc,
-                    0L,
-                    0L,
-                    GetModuleHandle(nullptr),
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    nullptr,
-                    L"FastWorldGen",
-                    nullptr};
+bool FwgUI::initializeGraphics() {
+  if (!glfwInit())
+    return false;
 
-  HICON hIcon = (HICON)LoadImage(
-      NULL,
-      (Cfg::Values().workingDirectory + "//resources//worldMap.ico").c_str(),
-      IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE);
-  if (hIcon) {
-    wc.hIcon = hIcon;
-    HWND consoleWindow = GetConsoleWindow();
-    SendMessage(consoleWindow, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-    SendMessage(consoleWindow, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
-  }
-  return wc;
-}
+  // Request a modern GL core context
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-bool FwgUI::initializeGraphics(HWND hwnd) {
-  if (!CreateDeviceD3D(hwnd)) {
-    CleanupDeviceD3D();
+#if __APPLE__
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
+
+  window = glfwCreateWindow(1280, 720, "FastWorldGen", nullptr, nullptr);
+  if (!window) {
+    glfwTerminate();
     return false;
   }
-  ::ShowWindow(hwnd, SW_SHOWDEFAULT);
-  ::UpdateWindow(hwnd);
+
+  glfwMakeContextCurrent(window);
+  glfwSwapInterval(1); // vsync
+
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    return false;
+
   return true;
 }
 
-void FwgUI::initializeImGui(HWND hwnd) {
-  uiUtils->setupImGuiContextAndStyle();
+void FwgUI::initializeImGui() {
+  uiUtils->setupImGuiContextAndStyle(); // <-- unchanged
   ImGui::StyleColorsDark();
-  uiUtils->setupImGuiBackends(hwnd, g_pd3dDevice, g_pd3dDeviceContext);
+
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
+  ImGui_ImplOpenGL3_Init("#version 450");
 }
+
 void FwgUI::genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
@@ -146,7 +100,7 @@ void FwgUI::logWrapper() {
 void FwgUI::imageWrapper(ImGuiIO &io) {
   static ImVec2 cursorPos;
 
-  float modif = 1.0 - (uiUtils->secondaryTexture != nullptr) * 0.5;
+  float modif = 1.0 - (uiUtils->secondaryTexture != 0) * 0.5;
   if (uiUtils->textureWidth > 0 && uiUtils->textureHeight > 0) {
     float aspectRatio =
         (float)uiUtils->textureWidth / (float)uiUtils->textureHeight;
@@ -176,7 +130,7 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
       ImGui::BeginChild("Image", ImVec2(texWidth, texHeight), false,
                         ImGuiWindowFlags_HorizontalScrollbar |
                             ImGuiWindowFlags_AlwaysVerticalScrollbar);
-      if (uiUtils->primaryTexture != nullptr) {
+      if (uiUtils->primaryTexture != 0) {
         ImGui::Image((void *)uiUtils->primaryTexture,
                      ImVec2(texWidth * zoom, texHeight * zoom));
 
@@ -206,7 +160,7 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
       // End the child window
       ImGui::EndChild();
 
-      if (uiUtils->secondaryTexture != nullptr) {
+      if (uiUtils->secondaryTexture != 0) {
         ImGui::BeginChild("ImageSecondary", ImVec2(texWidth, texHeight), false,
                           ImGuiWindowFlags_HorizontalScrollbar |
                               ImGuiWindowFlags_AlwaysVerticalScrollbar);
@@ -235,50 +189,6 @@ void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   initAllowedInput(cfg, fwg.climateData, fwg.terrainData.landformDefinitions);
 }
 
-void FwgUI::initDraggingPoll(bool &done) {
-  // reset dragging all the time in case it wasn't handled in a tab on
-  // purpose
-  triggeredDrag = false;
-  // Poll and handle messages (inputs, window resize, etc.)
-  // See the WndProc() function below for our to dispatch events to the
-  // Win32 backend.
-  MSG msg;
-  while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
-    ::TranslateMessage(&msg);
-    ::DispatchMessage(&msg);
-    if (msg.message == WM_QUIT)
-      done = true;
-    else if (msg.message == WM_DROPFILES) {
-      HDROP hDrop = reinterpret_cast<HDROP>(msg.wParam);
-
-      // extract files here
-      std::vector<std::string> files;
-      char filename[MAX_PATH];
-
-      UINT count = DragQueryFileA(hDrop, -1, NULL, 0);
-      for (UINT i = 0; i < count; ++i) {
-        if (DragQueryFileA(hDrop, i, filename, MAX_PATH)) {
-          files.push_back(filename);
-          // Fwg::Utils::Logging::logLine("Loaded file ", filename);
-        }
-      }
-      draggedFile = files.back();
-      triggeredDrag = true;
-      DragFinish(hDrop);
-    }
-  }
-
-  // Handle window resize (we don't resize directly in the WM_SIZE
-  // handler)
-  if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
-    CleanupRenderTarget();
-    g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight,
-                                DXGI_FORMAT_UNKNOWN, 0);
-    g_ResizeWidth = g_ResizeHeight = 0;
-    CreateRenderTarget();
-  }
-}
-
 void FwgUI::defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg) {
   showElevationTabs(cfg, fwg);
   showClimateInputTab(cfg, fwg);
@@ -303,118 +213,137 @@ void FwgUI::computationRunningCheck() {
   }
 }
 
-void FwgUI::cleanup(HWND hwnd, const WNDCLASSEXW &wc) {
-  uiUtils->shutdownImGui();
-  CleanupDeviceD3D();
-  ::DestroyWindow(hwnd);
-  ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+void FwgUI::cleanup() {
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
+
+  glfwDestroyWindow(window);
+  glfwTerminate();
+}
+
+void APIENTRY DebugCallback(GLenum source, GLenum type, GLuint id,
+                            GLenum severity, GLsizei length,
+                            const GLchar *message, const void *userParam) {
+  fprintf(stderr, "GL ERROR: %s\n", message);
 }
 
 int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
-  try {
-    //  Create application window
-    //  ImGui_ImplWin32_EnableDpiAwareness();
-    auto wc = initializeWindowClass();
+  Fwg::Utils::Logging::logLine("Starting GUI init");
 
-    HWND consoleWindow = GetConsoleWindow();
-
-    ::RegisterClassExW(&wc);
-    HWND hwnd = uiUtils->createAndConfigureWindow(wc, wc.lpszClassName,
-                                                  L"FastWorldGen 0.9.1");
-    initializeGraphics(hwnd);
-    initializeImGui(hwnd);
-    auto &io = ImGui::GetIO();
-
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    auto &cfg = Fwg::Cfg::Values();
-    // Main loop
-    bool done = false;
-    //--- prior to main loop:
-    DragAcceptFiles(hwnd, TRUE);
-    uiUtils->primaryTexture = nullptr;
-    uiUtils->device = g_pd3dDevice;
-    namespace fs = std::filesystem;
-
-    init(cfg, fwg);
-
-    while (!done) {
-      try {
-        initDraggingPoll(done);
-        // Start the Dear ImGui frame
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        {
-          ImGui::SetNextWindowPos({0, 0});
-          ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y});
-          ImGui::Begin("FastWorldGen");
-          // observer checks for "Error"
-
-          ImGui::BeginChild("LeftContent",
-                            ImVec2(ImGui::GetContentRegionAvail().x * 0.4f,
-                                   ImGui::GetContentRegionAvail().y * 1.0f),
-                            false);
-          {
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(78, 90, 204, 40));
-            // Create a child window for the left content
-            ImGui::BeginChild("SettingsContent",
-                              ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
-                                     ImGui::GetContentRegionAvail().y * 0.8f),
-                              false);
-            {
-              ImGui::SeparatorText(
-                  "Different Steps of the generation, usually go "
-                  "from left to right");
-
-              if (UI::Elements::BeginMainTabBar("Steps")) {
-                // Disable all inputs if computation is running
-                if (computationRunning) {
-                  ImGui::BeginDisabled();
-                }
-
-                defaultTabs(cfg, fwg);
-                // Re-enable inputs if computation is running
-                if (computationRunning && !computationStarted) {
-                  ImGui::EndDisabled();
-                }
-                computationRunningCheck();
-
-                UI::Elements::EndMainTabBar();
-              }
-
-              ImGui::PopStyleColor();
-              ImGui::EndChild();
-
-              // Draw a frame around the child region
-              ImVec2 childMin = ImGui::GetItemRectMin();
-              ImVec2 childMax = ImGui::GetItemRectMax();
-              ImGui::GetWindowDrawList()->AddRect(childMin, childMax,
-                                                  IM_COL32(100, 90, 180, 255),
-                                                  0.0f, 0, 2.0f);
-            }
-            genericWrapper(cfg, fwg);
-            logWrapper();
-          }
-          ImGui::SameLine();
-          imageWrapper(io);
-
-          ImGui::End();
-        }
-
-        // Rendering
-        uiUtils->renderImGui(g_pd3dDeviceContext, g_mainRenderTargetView,
-                             clear_color, g_pSwapChain);
-      } catch (std::exception e) {
-        Fwg::Utils::Logging::logLine("Error in GUI main loop: ", e.what());
-      }
-    }
-
-    cleanup(hwnd, wc);
-    return 0;
-  } catch (std::exception e) {
-    Fwg::Utils::Logging::logLine("Error in GUI startup: ", e.what());
+  // Initialize GLFW, window, GLAD, ImGui
+  if (!glfwInit()) {
+    Fwg::Utils::Logging::logLine("Starting GUI init FAILED");
     return -1;
   }
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+  window = glfwCreateWindow(1280, 720, "FastWorldGen 0.9.1", nullptr, nullptr);
+  glfwMakeContextCurrent(window);
+  glfwSwapInterval(1); // vsync
+
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    return -1;
+
+  uiUtils->setupImGuiContextAndStyle();
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
+  ImGui_ImplOpenGL3_Init("#version 450");
+
+  glfwSetWindowUserPointer(window, this);
+  glfwSetDropCallback(
+      window, [](GLFWwindow *win, int count, const char **paths) {
+        auto *fwgui = reinterpret_cast<FwgUI *>(glfwGetWindowUserPointer(win));
+        fwgui->triggeredDrag = (count > 0);
+        fwgui->draggedFile = (count > 0) ? std::string(paths[count - 1]) : "";
+      });
+  // glEnable(GL_DEBUG_OUTPUT);
+  // glDebugMessageCallback(DebugCallback, nullptr);
+
+  auto &cfg = Fwg::Cfg::Values();
+  auto &io = uiUtils->setupImGuiContextAndStyle();
+  init(cfg, fwg);
+
+  while (!glfwWindowShouldClose(window)) {
+    glfwPollEvents();
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    {
+      ImGui::SetNextWindowPos({0, 0});
+      ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y});
+      ImGui::Begin("FastWorldGen");
+      // observer checks for "Error"
+
+      ImGui::BeginChild("LeftContent",
+                        ImVec2(ImGui::GetContentRegionAvail().x * 0.4f,
+                               ImGui::GetContentRegionAvail().y * 1.0f),
+                        false);
+      {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(78, 90, 204, 40));
+        // Create a child window for the left content
+        ImGui::BeginChild("SettingsContent",
+                          ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
+                                 ImGui::GetContentRegionAvail().y * 0.8f),
+                          false);
+        {
+          ImGui::SeparatorText("Different Steps of the generation, usually go "
+                               "from left to right");
+
+          if (UI::Elements::BeginMainTabBar("Steps")) {
+            // Disable all inputs if computation is running
+            if (computationRunning) {
+              ImGui::BeginDisabled();
+            }
+
+            defaultTabs(cfg, fwg);
+            // Re-enable inputs if computation is running
+            if (computationRunning && !computationStarted) {
+              ImGui::EndDisabled();
+            }
+            computationRunningCheck();
+
+            UI::Elements::EndMainTabBar();
+          }
+
+          ImGui::PopStyleColor();
+          ImGui::EndChild();
+
+          // Draw a frame around the child region
+          ImVec2 childMin = ImGui::GetItemRectMin();
+          ImVec2 childMax = ImGui::GetItemRectMax();
+          ImGui::GetWindowDrawList()->AddRect(
+              childMin, childMax, IM_COL32(100, 90, 180, 255), 0.0f, 0, 2.0f);
+        }
+        genericWrapper(cfg, fwg);
+        logWrapper();
+      }
+      ImGui::SameLine();
+      imageWrapper(io);
+
+      ImGui::End();
+    }
+
+    // Render
+    ImGui::Render();
+    int display_w, display_h;
+    glfwGetFramebufferSize(window, &display_w, &display_h);
+    glViewport(0, 0, display_w, display_h);
+    glClearColor(0.45f, 0.55f, 0.60f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    glfwSwapBuffers(window);
+  }
+
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
+  CleanupDeviceGL();
+  return 0;
 }
 
 void FwgUI::disableBlock(const Fwg::Gfx::Image &image) {
@@ -440,7 +369,7 @@ void FwgUI::initAllowedInput(
     landUI.allowedLandInputs.setValue(landformDefinition.colour,
                                       landformDefinition);
   }
-};
+}
 
 void FwgUI::loadHeightmapConfigs() {
   auto &cfg = Fwg::Cfg::Values();
@@ -535,10 +464,11 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return true;
 }
 
-void FwgUI::areaInputSelector(Fwg::Cfg& cfg) {
+void FwgUI::areaInputSelector(Fwg::Cfg &cfg) {
   ImGui::TextUnformatted("Area Input Mode");
 
-  ImGui::RadioButton("Solid", cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID);
+  ImGui::RadioButton("Solid",
+                     cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID);
   if (ImGui::IsItemClicked()) {
     cfg.areaInputMode = Fwg::Areas::AreaInputType::SOLID;
   }
@@ -592,11 +522,12 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                               "mappedInput.json");
     }
     // Not really supported yet
-    //ImGui::RadioButton("Topography", cfg.landInputMode ==
+    // ImGui::RadioButton("Topography", cfg.landInputMode ==
     //                                     Fwg::Terrain::InputMode::TOPOGRAPHY);
-    //if (ImGui::IsItemClicked()) {
+    // if (ImGui::IsItemClicked()) {
     //  cfg.landInputMode = Fwg::Terrain::InputMode::TOPOGRAPHY;
-    //  cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
+    //  cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//"
+    //  +
     //                          "mappedInput.json");
     //}
 
@@ -1620,8 +1551,8 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
       if (triggeredDrag) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
-          modifiedAreas = true;
-          auto evaluationAreas =
+          triggeredDrag = false;
+          const auto evaluationAreas =
               Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                   fwg.terrainData.landMask);
           if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
@@ -1642,8 +1573,8 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           }
           fwg.segmentMap =
               Fwg::Gfx::Segments::displaySegments(fwg.areaData.segments);
-          triggeredDrag = false;
           uiUtils->resetTexture();
+          modifiedAreas = true;
           return true;
         });
       }
@@ -1762,7 +1693,7 @@ int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
             // fwg.loadRegions(cfg, draggedFile);
             Utils::Logging::logLine(
                 "If you want to load regions, do it in the segments tab.");
-          } catch (std::exception e) {
+          } catch (std::exception &e) {
             Utils::Logging::logLine(
                 "Couldn't load regions, fix input or try again");
             fwg.regionMap = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
@@ -1781,7 +1712,8 @@ int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Continents")) {
-    if (uiUtils->tabSwitchEvent()) {
+    if (uiUtils->tabSwitchEvent() && fwg.areaData.provinces.size() &&
+        fwg.areaData.regions.size()) {
       uiUtils->updateImage(0,
                            Fwg::Gfx::simpleContinents(fwg.areaData.continents,
                                                       fwg.areaData.seaBodies));
@@ -1793,7 +1725,8 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::InputInt("Maximum amount of continents", &cfg.maxAmountOfContinents,
                     1);
     ImGui::PopItemWidth();
-    if (fwg.areaData.landBodies.size() && fwg.areaData.provinces.size()) {
+    if (fwg.areaData.landBodies.size() && fwg.areaData.provinces.size() &&
+        fwg.areaData.regions.size()) {
       if (ImGui::Button("Generate Continents from landbodies") ||
           (fwg.areaData.continents.empty() && !computationRunning)) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
@@ -1832,78 +1765,47 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 // Helper functions
 
-bool FwgUI::CreateDeviceD3D(HWND hWnd) {
-  // Setup swap chain
-  DXGI_SWAP_CHAIN_DESC sd;
-  ZeroMemory(&sd, sizeof(sd));
-  sd.BufferCount = 2;
-  sd.BufferDesc.Width = 0;
-  sd.BufferDesc.Height = 0;
-  sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-  sd.BufferDesc.RefreshRate.Numerator = 60;
-  sd.BufferDesc.RefreshRate.Denominator = 1;
-  sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-  sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  sd.OutputWindow = hWnd;
-  sd.SampleDesc.Count = 1;
-  sd.SampleDesc.Quality = 0;
-  sd.Windowed = TRUE;
-  sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-  UINT createDeviceFlags = 0;
-  // createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-  D3D_FEATURE_LEVEL featureLevel;
-  const D3D_FEATURE_LEVEL featureLevelArray[2] = {
-      D3D_FEATURE_LEVEL_11_0,
-      D3D_FEATURE_LEVEL_10_0,
-  };
-  HRESULT res = D3D11CreateDeviceAndSwapChain(
-      nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
-      featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
-      &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-  if (res == DXGI_ERROR_UNSUPPORTED) // Try high-performance WARP software
-                                     // driver if hardware is not available.
-    res = D3D11CreateDeviceAndSwapChain(
-        nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags,
-        featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain,
-        &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-  if (res != S_OK)
+bool FwgUI::CreateDeviceGL(const char *title, int width, int height) {
+  if (!glfwInit()) {
     return false;
+  }
 
-  CreateRenderTarget();
+  // Configure GLFW for modern OpenGL
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  GLFWmonitor *primary = glfwGetPrimaryMonitor();
+  const GLFWvidmode *mode = glfwGetVideoMode(primary);
+  glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
+#ifdef __APPLE__
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
+  // Create a windowed fullscreen (borderless) window
+  window = glfwCreateWindow(mode->width, mode->height, title, nullptr, nullptr);
+  if (!window) {
+    glfwTerminate();
+    return false;
+  }
+
+  glfwMaximizeWindow(window);
+  glfwMakeContextCurrent(window);
+  glfwSwapInterval(1); // Enable vsync
+
+  // Load GL through GLAD
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+    return false;
+  }
+
   return true;
 }
 
-void FwgUI::CleanupDeviceD3D() {
-  CleanupRenderTarget();
-  if (g_pSwapChain) {
-    g_pSwapChain->Release();
-    g_pSwapChain = nullptr;
+void FwgUI::CleanupDeviceGL() {
+  if (window) {
+    glfwDestroyWindow(window);
+    window = nullptr;
   }
-  if (g_pd3dDeviceContext) {
-    g_pd3dDeviceContext->Release();
-    g_pd3dDeviceContext = nullptr;
-  }
-  uiUtils->cleanupDirect3DDevice(g_pd3dDevice);
-}
 
-void FwgUI::CreateRenderTarget() {
-  ID3D11Texture2D *pBackBuffer;
-  g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-  if (pBackBuffer != nullptr) {
-    g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr,
-                                         &g_mainRenderTargetView);
-    pBackBuffer->Release();
-  } else {
-    throw(std::exception("Could not get buffer of RenderTargetView"));
-  }
-}
-
-void FwgUI::CleanupRenderTarget() {
-  if (g_mainRenderTargetView) {
-    g_mainRenderTargetView->Release();
-    g_mainRenderTargetView = nullptr;
-  }
+  glfwTerminate();
 }
 
 } // namespace Fwg

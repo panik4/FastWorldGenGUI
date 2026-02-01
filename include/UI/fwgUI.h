@@ -2,13 +2,11 @@
 #include "ClimateUI.h"
 #include "FastWorldGenerator.h"
 #include "UI/UiElements.h"
-#include "landUI.h"
+#include "LandUI.h"
 #include <atomic>
-#include <d3d11.h>
 #include <functional>
 #include <future>
 #include <string>
-#include <tchar.h>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -64,7 +62,7 @@ protected:
 
   
   std::vector<std::string> heightmapConfigFiles;
-
+  GLFWwindow *window = nullptr;
 
 
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
@@ -112,16 +110,10 @@ protected:
   int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 
   // Data
-  static ID3D11Device *g_pd3dDevice;
-  static ID3D11DeviceContext *g_pd3dDeviceContext;
-  static IDXGISwapChain *g_pSwapChain;
-  static ID3D11RenderTargetView *g_mainRenderTargetView;
 
   // UTILS:
-  bool CreateDeviceD3D(HWND hWnd);
-  void CleanupDeviceD3D();
-  void CreateRenderTarget();
-  void CleanupRenderTarget();
+  bool CreateDeviceGL(const char *title, int width, int height);
+  void CleanupDeviceGL();
 
   static bool optionalInput(bool condition, std::function<bool()> fn) {
     return condition ? fn() : false;
@@ -136,19 +128,18 @@ protected:
     return first || longCircuitLogicalOr(args...);
   }
 
+
 public:
   FwgUI();
-  WNDCLASSEXW initializeWindowClass();
-  bool initializeGraphics(HWND hwnd);
-  void initializeImGui(HWND hwnd);
+  bool initializeGraphics();
+  void initializeImGui();
+  void cleanup();
   void genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void logWrapper();
   void imageWrapper(ImGuiIO &io);
   void init(Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void initDraggingPoll(bool &done);
   void defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg);
   void computationRunningCheck();
-  void cleanup(HWND hwnd, const WNDCLASSEXW &wc);
   int shiny(Fwg::FastWorldGenerator &fwg);
 };
 } // namespace Fwg

@@ -1,11 +1,14 @@
 #pragma once
+#include "glad/glad.h"
+#define GLFW_INCLUDE_NONE
+#include "GLFW/glfw3.h"
 #include "FastWorldGenerator.h"
 #include "UI/UiElements.h"
-#include "backends/imgui_impl_dx11.h"
-#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
 #include "imgui.h"
 
-enum class InteractionType { NONE, CLICK, RCLICK};
+enum class InteractionType { NONE, CLICK, RCLICK };
 
 struct ClickEvent {
   int pixel;
@@ -28,14 +31,14 @@ public:
   std::map<std::string, std::string> advancedHelpTexts;
   std::map<std::string, Fwg::Gfx::Image> advancedHelpImages;
   std::map<std::string, float> advancedHelpTexturesAspectRatio;
-  std::map<std::string, ID3D11ShaderResourceView *> advancedHelpTextures;
+  std::map<std::string, GLuint> advancedHelpTextures;
 
   std::queue<ClickEvent> clickEvents;
   bool showExtendedHelp = false;
   std::string activeKey = "";
-  ID3D11ShaderResourceView *primaryTexture = nullptr;
-  ID3D11ShaderResourceView *secondaryTexture = nullptr;
-  ID3D11Device *device = nullptr;
+  GLuint primaryTexture = 0;
+  GLuint secondaryTexture = 0;
+
   bool updateTexture1;
   bool updateTexture2;
   int textureWidth;
@@ -92,24 +95,21 @@ public:
   bool tabSwitchEvent(bool processClickEvents = false);
   void updateImage(int index, const Fwg::Gfx::Image &image);
 
-  void freeTexture(ID3D11ShaderResourceView **texture);
-  // texture utils
-  bool getResourceView(const Fwg::Gfx::Image &image,
-                       ID3D11ShaderResourceView **out_srv, int *out_width,
-                       int *out_height, ID3D11Device *g_pd3dDevice);
-  ImGuiIO setupImGuiContextAndStyle();
-  HWND createAndConfigureWindow(WNDCLASSEXW &wc, LPCWSTR className,
-                                LPCWSTR windowName);
-  void setupImGuiBackends(HWND hwnd, ID3D11Device *g_pd3dDevice,
-                          ID3D11DeviceContext *g_pd3dDeviceContext);
-  void cleanupDirect3DDevice(ID3D11Device *g_pd3dDevice);
-  void renderImGui(ID3D11DeviceContext *g_pd3dDeviceContext,
-                   ID3D11RenderTargetView *g_mainRenderTargetView,
-                   const ImVec4 &clear_color, IDXGISwapChain *g_pSwapChain);
+  void freeTexture(GLuint *texture);
+
+  bool getResourceView(const Fwg::Gfx::Image &image, GLuint *out_tex,
+                       int *out_width, int *out_height);
+
+  ImGuiIO &setupImGuiContextAndStyle();
+  GLFWwindow *createAndConfigureWindow(int width, int height,
+                                       const char *title);
+  void setupImGuiBackends(GLFWwindow *window);
+  void cleanupGLResources();
+  void renderImGui(const ImVec4 &clear_color, GLFWwindow *window);
   void shutdownImGui();
   void loadHelpTextsFromFile(const std::string &filePath);
   void loadHelpImagesFromPath(const std::string &filePath);
-  void showHelpTextBox(const std::string &key, bool switchKey=true);
+  void showHelpTextBox(const std::string &key, bool switchKey = true);
   void showAdvancedTextBox();
 };
 
@@ -118,9 +118,8 @@ std::vector<std::vector<int>>
 getLandmaskEvaluationAreas(std::vector<bool> &mask);
 }
 
-
 namespace Fwg::UI::Elements {
 void borderChild(const std::string &label,
                  const std::function<void()> &guiCalls);
 
-} // namespace Elements
+} // namespace Fwg::UI::Elements

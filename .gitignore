@@ -6,6 +6,7 @@
 /RandomParadox/.vs/
 *.vcxproj*
 *libtga
+*build*
 */Maps/*
 *Maps/*
 */inputs/*

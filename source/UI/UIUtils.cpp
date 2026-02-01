@@ -1,4 +1,4 @@
-#include "UI//UIUtils.h"
+#include "UI/UIUtils.h"
 
 void UIUtils::imageClick(float scale, ImGuiIO &io) {
   // ensure we have an image to click on
@@ -131,150 +131,151 @@ bool UIUtils::tabSwitchEvent(bool processClickEvents) {
 }
 
 void UIUtils::updateImage(int index, const Fwg::Gfx::Image &image) {
-  auto &texture = (index == 0) ? primaryTexture : secondaryTexture;
-  auto &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
+  GLuint &texture = (index == 0) ? primaryTexture : secondaryTexture;
+  bool &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
 
-  // Fwg::Utils::Logging::logLine(
-  //     "UIUtils::updateImage: Updating image at index " +
-  //     std::to_string(index) + " with size: " + std::to_string(image.size()));
+  // Free existing GL texture
   freeTexture(&texture);
   updateFlag = false;
 
-  const size_t expectedSize = textureWidth * textureHeight;
-  if (image.initialised() && image.imageData.size()) {
-    try {
-      activeImages[index] = image;
-      // auto flipped = Fwg::Gfx::Bmp::flip(image);
-      if (image.imageData.size() == expectedSize) {
-        if (!getResourceView(image, &texture, &textureWidth, &textureHeight,
-                             device)) {
-          Fwg::Utils::Logging::logLine("ERROR: Couldn't get resource view");
-        }
-      }
-      textureWidth = image.width();
-      textureHeight = image.height();
-    } catch (const std::exception &e) {
-      Fwg::Utils::Logging::logLine(
-          std::string("ERROR: Exception in updateImage: ") + e.what());
+  if (!image.initialised() || image.imageData.empty())
+    return;
+
+  try {
+    activeImages[index] = image;
+
+    // Upload OpenGL texture
+    if (!getResourceView(image, &texture, &textureWidth, &textureHeight)) {
+      Fwg::Utils::Logging::logLine("ERROR: Couldn't create OpenGL texture");
+      return;
     }
+
+    textureWidth = image.width();
+    textureHeight = image.height();
+  } catch (const std::exception &e) {
+    Fwg::Utils::Logging::logLine(
+        std::string("ERROR: Exception in updateImage: ") + e.what());
   }
 }
 
-void UIUtils::freeTexture(ID3D11ShaderResourceView **texture) {
-  if ((*texture) != nullptr) {
-    (*texture)->Release();
-    *texture = nullptr;
+void UIUtils::freeTexture(GLuint *texture) {
+  if (texture && *texture != 0) {
+    glDeleteTextures(1, texture);
+    *texture = 0;
   }
 }
 
-// Simple helper function to load an image into a DX11 texture with common
-// settings
-bool UIUtils::getResourceView(const Fwg::Gfx::Image &image,
-                              ID3D11ShaderResourceView **out_srv,
-                              int *out_width, int *out_height,
-                              ID3D11Device *g_pd3dDevice) {
-  // Load from disk into a raw RGBA buffer
-  int image_width = image.width();
-  int image_height = image.height();
-  std::vector<unsigned char> image_data = image.getFlipped32bit();
-
-  // Create texture
-  D3D11_TEXTURE2D_DESC desc;
-  ZeroMemory(&desc, sizeof(desc));
-  desc.Width = image_width;
-  desc.Height = image_height;
-  desc.MipLevels = 1;
-  desc.ArraySize = 1;
-  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-  desc.SampleDesc.Count = 1;
-  desc.Usage = D3D11_USAGE_DEFAULT;
-  desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-  desc.CPUAccessFlags = 0;
-
-  ID3D11Texture2D *pTexture = NULL;
-  D3D11_SUBRESOURCE_DATA subResource;
-  subResource.pSysMem = image_data.data();
-  subResource.SysMemPitch = desc.Width * 4;
-  subResource.SysMemSlicePitch = 0;
-  g_pd3dDevice->CreateTexture2D(&desc, &subResource, &pTexture);
-  if (pTexture != nullptr) {
-    // Create texture view
-    D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc;
-    ZeroMemory(&srvDesc, sizeof(srvDesc));
-    srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = desc.MipLevels;
-    srvDesc.Texture2D.MostDetailedMip = 0;
-    g_pd3dDevice->CreateShaderResourceView(pTexture, &srvDesc, out_srv);
-    pTexture->Release();
-  } else {
+bool UIUtils::getResourceView(const Fwg::Gfx::Image &image, GLuint *out_tex,
+                              int *out_width, int *out_height) {
+  if (!out_tex)
     return false;
-  }
-  *out_width = image_width;
-  *out_height = image_height;
+
+  const int w = image.width();
+  const int h = image.height();
+  const std::vector<unsigned char> pixels = image.getFlipped32bit();
+
+  *out_tex = 0;
+
+  glGenTextures(1, out_tex);
+  glBindTexture(GL_TEXTURE_2D, *out_tex);
+
+  // Texture upload
+  glTexImage2D(GL_TEXTURE_2D, 0,
+               GL_RGBA, // internal format
+               w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+  // Basic sampling
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  if (out_width)
+    *out_width = w;
+  if (out_height)
+    *out_height = h;
+
   return true;
 }
 
-ImGuiIO UIUtils::setupImGuiContextAndStyle() {
+ImGuiIO &UIUtils::setupImGuiContextAndStyle() {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
-  auto &io = ImGui::GetIO();
-  io.ConfigFlags |=
-      ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-  io.ConfigFlags |=
-      ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+
+  ImGuiIO &io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
   ImGui::StyleColorsDark();
   return io;
 }
 
-HWND UIUtils::createAndConfigureWindow(WNDCLASSEXW &wc, LPCWSTR className,
-                                       LPCWSTR windowName) {
-  HWND hwnd =
-      ::CreateWindowW(wc.lpszClassName, windowName, WS_OVERLAPPEDWINDOW, 100,
-                      100, 1280, 800, nullptr, nullptr, wc.hInstance, nullptr);
-  MONITORINFO monitor_info;
-  monitor_info.cbSize = sizeof(monitor_info);
-  GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
-                 &monitor_info);
-  SetWindowPos(hwnd, NULL, 0, 0,
-               monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
-               monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
-               SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-  return hwnd;
+GLFWwindow *UIUtils::createAndConfigureWindow(int width, int height,
+                                              const char *title) {
+  if (!glfwInit())
+    return nullptr;
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+  GLFWwindow *window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+  if (!window)
+    return nullptr;
+
+  glfwMakeContextCurrent(window);
+  glfwSwapInterval(1); // vsync
+
+  // Load GL functions
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    return nullptr;
+
+  return window;
 }
 
-void UIUtils::setupImGuiBackends(HWND hwnd, ID3D11Device *g_pd3dDevice,
-                                 ID3D11DeviceContext *g_pd3dDeviceContext) {
-  ImGui_ImplWin32_Init(hwnd);
-  ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+void UIUtils::setupImGuiBackends(GLFWwindow *window) {
+  // GLFW backend
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
+
+  // OpenGL3 backend (GLSL 330 core is the safest cross-platform default)
+  ImGui_ImplOpenGL3_Init("#version 330 core");
 }
 
-void UIUtils::cleanupDirect3DDevice(ID3D11Device *g_pd3dDevice) {
-  if (g_pd3dDevice) {
-    g_pd3dDevice->Release();
-    g_pd3dDevice = nullptr;
-  }
+void UIUtils::cleanupGLResources() {
+  for (auto &kv : advancedHelpTextures)
+    glDeleteTextures(1, &kv.second);
+
+  if (primaryTexture)
+    glDeleteTextures(1, &primaryTexture);
+
+  if (secondaryTexture)
+    glDeleteTextures(1, &secondaryTexture);
 }
 
-void UIUtils::renderImGui(ID3D11DeviceContext *g_pd3dDeviceContext,
-                          ID3D11RenderTargetView *g_mainRenderTargetView,
-                          const ImVec4 &clear_color,
-                          IDXGISwapChain *g_pSwapChain) {
-  ImGui::Render();
+void UIUtils::renderImGui(const ImVec4 &clear_color, GLFWwindow *window) {
+  int width, height;
+  glfwGetFramebufferSize(window, &width, &height);
+  glViewport(0, 0, width, height);
+
   const float clear_color_with_alpha[4] = {
       clear_color.x * clear_color.w, clear_color.y * clear_color.w,
       clear_color.z * clear_color.w, clear_color.w};
-  g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
-  g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView,
-                                             clear_color_with_alpha);
-  ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 
-  g_pSwapChain->Present(1, 0); // Present with vsync
+  glClearColor(clear_color_with_alpha[0], clear_color_with_alpha[1],
+               clear_color_with_alpha[2], clear_color_with_alpha[3]);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  ImGui::Render();
+  ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+  glfwSwapBuffers(window);
 }
 
 void UIUtils::shutdownImGui() {
-  ImGui_ImplDX11_Shutdown();
-  ImGui_ImplWin32_Shutdown();
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
 }
 
@@ -293,10 +294,10 @@ getLandmaskEvaluationAreas(std::vector<bool> &mask) {
   return evaluationAreas;
 }
 
-} // namespace Masks
+} // namespace Fwg::UI::Utils::Masks
 
 void Fwg::UI::Elements::borderChild(const std::string &label,
-                           const std::function<void()> &guiCalls) {
+                                    const std::function<void()> &guiCalls) {
   {
     ::ImGui::BeginChild(label.c_str(), ImVec2(400, 150),
                         true); // Begin child window with border}
@@ -338,29 +339,33 @@ void UIUtils::loadHelpTextsFromFile(const std::string &filePath) {
   }
 }
 void UIUtils::loadHelpImagesFromPath(const std::string &path) {
-  auto imageDirectory = path + "//uiHelpImages//";
+  const std::string imageDirectory = path + "/uiHelpImages/";
 
   for (const auto &entry :
        std::filesystem::directory_iterator(imageDirectory)) {
-    if (entry.is_directory()) {
-      continue; // Skip directories
-    }
-    // get the filename without extension
-    auto filename = entry.path().filename().string();
-    // remove the extension
+    if (entry.is_directory())
+      continue;
+
+    // Strip extension
+    std::string filename = entry.path().filename().string();
     filename = filename.substr(0, filename.find_last_of('.'));
-    auto image = Fwg::Gfx::Png::load(entry.path().string());
-    auto texWidth = image.width();
-    auto texHeight = image.height();
-    ID3D11ShaderResourceView *texture = nullptr;
-    if (texWidth > 0 && texHeight > 0) {
-      getResourceView(image, &texture, &texWidth, &texHeight, device);
-      advancedHelpTextures[filename] = texture;
-      advancedHelpTexturesAspectRatio[filename] =
-          static_cast<float>(texHeight) / static_cast<float>(texWidth);
-    }
+
+    Fwg::Gfx::Image image = Fwg::Gfx::Png::load(entry.path().string());
+    int w = image.width();
+    int h = image.height();
+
+    if (w <= 0 || h <= 0)
+      continue;
+
+    GLuint texture = 0;
+    if (!getResourceView(image, &texture, &w, &h))
+      continue;
+
+    advancedHelpTextures[filename] = texture;
+    advancedHelpTexturesAspectRatio[filename] = float(h) / float(w);
   }
 }
+
 void UIUtils::showHelpTextBox(const std::string &key, bool switchkey) {
   ImGui::BeginChild("Help Box",
                     ImVec2(ImGui::GetContentRegionAvail().x,
@@ -485,9 +490,10 @@ void UIUtils::showAdvancedTextBox() {
     // Start horizontal layout
     ImGui::BeginGroup();
     if (advancedHelpTextures.contains(key)) {
-      ImGui::Image(advancedHelpTextures[key],
+      ImGui::Image((ImTextureID)(intptr_t)advancedHelpTextures[key],
                    ImVec2(imageWidth,
                           imageWidth * advancedHelpTexturesAspectRatio[key]));
+
     }
     ImGui::EndGroup();
 

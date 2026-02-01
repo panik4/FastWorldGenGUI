@@ -5,7 +5,7 @@
 		{
 			"complexHeight" : true,
 			"layerAmount" : 11,
-			"heightmapFrequencyModifier" : 1.5,
+			"heightmapFrequencyModifier" : 1.0,
 			"heightmapWidthEdgeModifier" : 0.1,
 			"heightmapHeightEdgeModifier" : 0.1,
 			"removeChunkThreshold": 9,
@@ -151,7 +151,7 @@
 					"fractalType" : 2,
 					"landLayer" : true,
 					"seaLayer" : false,
-					"fractalFrequency" : 0.9,
+					"fractalFrequency" : 0.5,
 					"fractalOctaves" : 11,
 					"fractalGain" : 0.7,
 					"seed" : 0,
@@ -162,7 +162,7 @@
 					"altitudeWeightEnd" : 0.0,
 					"maxHeight" : 40,
 					"minHeight" : 0,
-					"tanFactor": 7.0
+					"tanFactor": 4.0
 				},
 				"8" :
 				{
@@ -170,7 +170,7 @@
 					"fractalType" : 2,
 					"landLayer" : true,
 					"seaLayer" : false,
-					"fractalFrequency" : 2,
+					"fractalFrequency" : 1,
 					"fractalOctaves" : 11,
 					"fractalGain" : 0.7,
 					"seed" : 0,
@@ -181,7 +181,7 @@
 					"altitudeWeightEnd" : 0.0,
 					"maxHeight" : 40,
 					"minHeight" : 0,
-					"tanFactor": 7.0
+					"tanFactor": 4.0
 				},
 				"9" :
 				{
