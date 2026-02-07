@@ -313,7 +313,7 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
   } else if (ImGui::Button("Analyse Input") || analyse) {
     // always reload the classified map from disk
-    Fwg::Gfx::Bmp::save(landInput, cfg.mapsPath + "//classifiedLandInput.png");
+    Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "//classifiedLandInput.png");
     analyseLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
     analyse = false;
   }

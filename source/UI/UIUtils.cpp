@@ -493,7 +493,6 @@ void UIUtils::showAdvancedTextBox() {
       ImGui::Image((ImTextureID)(intptr_t)advancedHelpTextures[key],
                    ImVec2(imageWidth,
                           imageWidth * advancedHelpTexturesAspectRatio[key]));
-
     }
     ImGui::EndGroup();
 
@@ -502,7 +501,6 @@ void UIUtils::showAdvancedTextBox() {
     ImGui::BeginGroup();
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + textWidth);
     RenderEmphasizedText(value, textWidth);
-    // ImGui::TextUnformatted(value.c_str());
     ImGui::PopTextWrapPos();
     ImGui::EndGroup();
 

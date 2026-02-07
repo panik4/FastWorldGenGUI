@@ -81,13 +81,7 @@ void FwgUI::logWrapper() {
       // scroll to bottom
       ImGui::SetScrollHereY(1.0f);
     }
-    ImGui::EndChild();
     ImGui::PopStyleColor();
-    // Draw a frame around the child region
-    ImVec2 childMin = ImGui::GetItemRectMin();
-    ImVec2 childMax = ImGui::GetItemRectMax();
-    ImGui::GetWindowDrawList()->AddRect(
-        childMin, childMax, IM_COL32(25, 91, 133, 255), 0.0f, 0, 2.0f);
   }
   ImGui::EndChild();
   // Draw a frame around the child region
@@ -267,6 +261,7 @@ int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
   init(cfg, fwg);
 
   while (!glfwWindowShouldClose(window)) {
+    triggeredDrag = false;
     glfwPollEvents();
 
     ImGui_ImplOpenGL3_NewFrame();
@@ -806,7 +801,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           inputPath = cfg.mapsPath + "//topographyInput.png";
           break;
         case Fwg::Terrain::InputMode::LANDFORM:
-          inputPath = cfg.mapsPath + "//landformInput.png";
+          inputPath = cfg.mapsPath + "//classifiedLandInput.png";
           break;
         default:
           break;
@@ -1086,7 +1081,7 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         ImGui::Button("Generate from labeled climate")) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         cfg.complexClimateInput = true;
-        Fwg::Gfx::Bmp::save(climateUI.climateInputMap,
+        Fwg::Gfx::Png::save(climateUI.climateInputMap,
                             cfg.mapsPath + "//classifiedClimateInput.png");
         fwg.loadClimate(cfg, climateUI.climateInputMap);
         uiUtils->resetTexture();
