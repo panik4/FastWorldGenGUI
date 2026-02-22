@@ -702,8 +702,33 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         ImGui::SameLine();
         ImGui::Checkbox("<--SeaLayer", &seaLayer);
         cfg.seaLayer[selectedLayer] = seaLayer;
-        ImGui::InputInt("<--Noise Type", &cfg.noiseType[selectedLayer]);
-        ImGui::InputInt("<--Fractal Type", &cfg.fractalType[selectedLayer]);
+
+        static const char *NoiseTypeNames[] = {"OpenSimplex2", "OpenSimplex2S",
+                                               "Cellular",     "Perlin",
+                                               "ValueCubic",   "Value"};
+
+        static const char *FractalTypeNames[] = {"None",
+                                                 "FBm",
+                                                 "Ridged",
+                                                 "PingPong",
+                                                 "DomainWarpProgressive",
+                                                 "DomainWarpIndependent"};
+
+        int &noiseType = cfg.noiseType[selectedLayer];
+        int &fractalType = cfg.fractalType[selectedLayer];
+
+        // Clamp indices for safety
+        noiseType =
+            std::clamp(noiseType, 0, (int)(IM_ARRAYSIZE(NoiseTypeNames)) - 1);
+        fractalType = std::clamp(fractalType, 0,
+                                 (int)(IM_ARRAYSIZE(FractalTypeNames)) - 1);
+
+        // Show enum as nice dropdowns
+        ImGui::Combo("Noise Type", &noiseType, NoiseTypeNames,
+                     IM_ARRAYSIZE(NoiseTypeNames));
+        ImGui::Combo("Fractal Type", &fractalType, FractalTypeNames,
+                     IM_ARRAYSIZE(FractalTypeNames));
+
         ImGui::InputFloat("<--FractalFrequency",
                           &cfg.fractalFrequency[selectedLayer], 0.1);
         ImGui::InputInt("<--fractalOctaves", &cfg.fractalOctaves[selectedLayer],
