@@ -59,10 +59,14 @@ int main() {
   std::string username = metaConf.get<std::string>("config.username");
   std::string workingDirectory =
       metaConf.get<std::string>("config.workingDirectory");
+  if (!Fwg::Utils::Paths::validateAndSanitizeWorkingDirectory(
+          workingDirectory)) {
+    return -1;
+  }
   std::string configSubFolder =
       workingDirectory + metaConf.get<std::string>("config.configSubFolder");
 
-    auto &config = Fwg::Cfg::Values();
+  auto &config = Fwg::Cfg::Values();
   config.workingDirectory = workingDirectory;
   // check if we can read the config
   try {
@@ -73,7 +77,7 @@ int main() {
     Fwg::Utils::Logging::logLine(
         "Incorrect config \"FastWorldGenerator.json\"");
     Fwg::Utils::Logging::logLine("You can try fixing it yourself. Error is: ",
-                            e.what());
+                                 e.what());
     Fwg::Utils::Logging::logLine(
         "Otherwise try running it through a json validator, e.g. "
         "\"https://jsonlint.com/\" or \"search for json validator\"");

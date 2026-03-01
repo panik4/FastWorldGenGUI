@@ -368,7 +368,7 @@ void FwgUI::initAllowedInput(
 
 void FwgUI::loadHeightmapConfigs() {
   auto &cfg = Fwg::Cfg::Values();
-  auto heightmapConfigFolder = cfg.workingDirectory + "//configs//heightmap//";
+  auto heightmapConfigFolder = cfg.workingDirectory + "configs/heightmap/";
   // gather all files in the working heightmapConfigFolder
   for (const auto &entry :
        std::filesystem::directory_iterator(heightmapConfigFolder)) {
@@ -504,7 +504,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::RadioButton("Shape",
                        cfg.landInputMode == Fwg::Terrain::InputMode::SHAPE);
     if (ImGui::IsItemClicked()) {
-      cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
+      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "default.json");
       cfg.landInputMode = Fwg::Terrain::InputMode::SHAPE;
     }
@@ -513,7 +513,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                        cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP);
     if (ImGui::IsItemClicked()) {
       cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTMAP;
-      cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
+      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "mappedInput.json");
     }
     // Not really supported yet
@@ -530,7 +530,7 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                        cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM);
     if (ImGui::IsItemClicked()) {
       cfg.landInputMode = Fwg::Terrain::InputMode::LANDFORM;
-      cfg.readHeightmapConfig(cfg.workingDirectory + "//configs//heightmap//" +
+      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "mappedInput.json");
     }
     if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM &&
