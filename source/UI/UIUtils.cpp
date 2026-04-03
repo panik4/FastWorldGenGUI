@@ -106,7 +106,7 @@ void UIUtils::brushSettingsHeader() {
 }
 
 void UIUtils::setClickOffsets(int width, int brushSize) {
-  clickOffsets = Fwg::Utils::getCircularOffsets(width, brushSize);
+  clickOffsets = Fwg::Utils::Math::getCircularOffsets(width, brushSize);
 }
 void UIUtils::resetTexture(int id) {
   if (id == 0) {

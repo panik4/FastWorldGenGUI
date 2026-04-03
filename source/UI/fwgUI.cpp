@@ -620,6 +620,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (isActive)
         ImGui::SetItemDefaultFocus();
     }
+    ImGui::Text("Sealevel: %d", cfg.seaLevel);
 
     if (cfg.landInputMode == Fwg::Terrain::InputMode::SHAPE) {
       // UI::Elements::LabeledInputInt("SeaLevel", cfg.seaLevel, 1, 10, 0, 255);
@@ -630,13 +631,12 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       // UI::Elements::LabeledInputFloat("<--Landlayer coastal distance factor",
       //                                cfg.layerApplicationFactor, 0.01f, 0.1f,
       //                                0.0f, 1.0f);
-      ImGui::InputInt("<--SeaLevel", &cfg.seaLevel, 1, 10);
-      ImGui::SliderFloat("<--Landpercentage", &cfg.landPercentage, 0.00, 1.0);
+      ImGui::SliderFloat("<--Target Land Percentage", &cfg.landPercentage, 0.00,
+                         1.0);
       ImGui::InputInt("<--Height Adjustments", &cfg.heightAdjustments);
       ImGui::InputFloat("<--Landlayer coastal distance factor",
                         &cfg.layerApplicationFactor, 0.1f, 0.1f);
     } else {
-      ImGui::Text("Sealevel: %d", cfg.seaLevel);
       ImGui::Text("Landpercentage: %f", cfg.landPercentage);
     }
     // ImGui::InputDouble("<--Inclination factor", &cfg.inclinationFactor,
@@ -858,9 +858,9 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
     if (cfg.landInputMode == Fwg::Terrain::InputMode::SHAPE &&
         ImGui::Button("Generate complete random heightmap from new seed")) {
+      cfg.randomSeed = true;
+      cfg.reRandomize();
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
-        cfg.randomSeed = true;
-        cfg.reRandomize();
         fwg.genHeight();
         fwg.genLand();
         uiUtils->resetTexture();
