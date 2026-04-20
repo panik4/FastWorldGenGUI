@@ -1079,7 +1079,7 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       computationFutureBool = runAsync([&fwg, &cfg, this]() {
         cfg.complexClimateInput = true;
         Fwg::Gfx::Png::save(climateUI.climateInputMap,
-                            cfg.mapsPath + "//classifiedClimateInput.png");
+                            cfg.mapsPath + "/classifiedClimateInput.png");
         fwg.loadClimate(cfg, climateUI.climateInputMap);
         uiUtils->resetTexture();
         return true;

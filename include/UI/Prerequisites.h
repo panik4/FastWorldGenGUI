@@ -169,30 +169,6 @@ public:
     return PrerequisiteGuard(!missing.empty());
   }
 
-  // Compact version - single line summary
-  static PrerequisiteGuard
-  requireCompact(std::initializer_list<Prerequisite> prerequisites) {
-    std::vector<std::string> missingNames;
-
-    for (const auto &prereq : prerequisites) {
-      if (!prereq.check()) {
-        missingNames.push_back(prereq.name);
-      }
-    }
-
-    if (!missingNames.empty()) {
-      std::string summary = "Requires: ";
-      for (size_t i = 0; i < missingNames.size(); ++i) {
-        if (i > 0)
-          summary += ", ";
-        summary += missingNames[i];
-      }
-      ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", summary.c_str());
-    }
-
-    return PrerequisiteGuard(!missingNames.empty());
-  }
-
   // Silent check - no UI output, just returns guard
   static PrerequisiteGuard
   requireSilent(std::initializer_list<Prerequisite> prerequisites) {
