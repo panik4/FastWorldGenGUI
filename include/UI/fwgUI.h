@@ -1,8 +1,9 @@
 #pragma once
 #include "ClimateUI.h"
 #include "FastWorldGenerator.h"
-#include "UI/UiElements.h"
 #include "LandUI.h"
+#include "UI/PreRequisites.h"
+#include "UI/UiElements.h"
 #include <atomic>
 #include <functional>
 #include <future>
@@ -12,7 +13,6 @@
 #include <vector>
 
 namespace Fwg {
-
 
 class FwgUI {
 
@@ -31,8 +31,6 @@ protected:
     return std::async(std::launch::async, func, std::ref(args)...);
   }
 
-
-  
   std::atomic<bool> computationRunning;
   std::atomic<bool> computationStarted;
   std::future<void> computationFuture;
@@ -60,10 +58,8 @@ protected:
   bool redoProvinces = false;
   bool modifiedAreas = false;
 
-  
   std::vector<std::string> heightmapConfigFiles;
   GLFWwindow *window = nullptr;
-
 
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiUtils->activeImages[0].size() && uiUtils->activeImages[0].size()) {
@@ -76,8 +72,9 @@ protected:
 
   void disableBlock(const Fwg::Gfx::Image &image);
   void reenableBlock(const Fwg::Gfx::Image &image);
-  void initAllowedInput(Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
-                        std::vector<Terrain::LandformDefinition> &landformDefinitions);
+  void initAllowedInput(
+      Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
+      std::vector<Terrain::LandformDefinition> &landformDefinitions);
 
   void clearColours(Fwg::Gfx::Image &image);
 
@@ -127,7 +124,6 @@ protected:
   static bool longCircuitLogicalOr(const S first, const Args... args) {
     return first || longCircuitLogicalOr(args...);
   }
-
 
 public:
   FwgUI();
