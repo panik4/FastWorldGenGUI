@@ -322,44 +322,40 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                                 const std::string &draggedFile,
                                 const Fwg::Terrain::InputMode &inputMode) {
-  // if (fwg.heightMap.initialised() && !classifyInput) {
-  //   ImGui::OpenPopup("Drag info");
-  // } else
-  if (inputMode == Fwg::Terrain::InputMode::SHAPE) {
-    fwg.resetData();
+  fwg.resetData();
+  fwg.configure(cfg);
+  // don't immediately generate from the input, instead allow to manually
+  // classify all present colours
+  landInput = Fwg::IO::Reader::readGenericImage(draggedFile, cfg, false);
+  std::string outputPath = "";
+  switch (inputMode) {
+  case Fwg::Terrain::InputMode::HEIGHTMAP:
+    outputPath = cfg.mapsPath + "/heightmapInput.png";
+    cfg.allowHeightmapModification = false;
+    fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(draggedFile, cfg));
+    uiUtils->resetTexture();
+    break;
+  case Fwg::Terrain::InputMode::HEIGHTSKETCH:
+    outputPath = cfg.mapsPath + "/heightSketchInput.png";
+    break;
+  case Fwg::Terrain::InputMode::TOPOGRAPHY:
+    outputPath = cfg.mapsPath + "/topographyInput.png";
+    break;
+
+  case Fwg::Terrain::InputMode::LANDMASK:
+    outputPath = cfg.mapsPath + "/landmaskInput.png";
     fwg.genHeightFromInput(cfg, draggedFile, inputMode);
-    fwg.genLand();
-    // buffer this path in case we want to regen heightmap from this
-    loadedTerrainFile = draggedFile;
-
-  } else {
-    fwg.resetData();
-    fwg.configure(cfg);
-    // don't immediately generate from the input, instead allow to manually
-    // classify all present colours
-    landInput = Fwg::IO::Reader::readGenericImage(draggedFile, cfg, false);
-    // if (!cfg.validateResolution(landInput.width(), landInput.height())) {
-    //   Utils::Logging::logLine("Invalid resolution for land input image");
-    //   landInput.clear();
-    // }
-    std::string outputPath = "";
-    switch (inputMode) {
-    case Fwg::Terrain::InputMode::HEIGHTMAP:
-      outputPath = cfg.mapsPath + "//heightmapInput.png";
-      break;
-    case Fwg::Terrain::InputMode::TOPOGRAPHY:
-      outputPath = cfg.mapsPath + "//topographyInput.png";
-      break;
-    case Fwg::Terrain::InputMode::LANDFORM:
-      outputPath = cfg.mapsPath + "//landformInput.png";
-      break;
-    default:
-      break;
-    }
-
-    //  save the landmap to classifiedLandInput.png
-    Fwg::Gfx::Png::save(landInput, outputPath);
+    break;
+  case Fwg::Terrain::InputMode::LANDFORM:
+    outputPath = cfg.mapsPath + "/landformInput.png";
+    fwg.genHeightFromInput(cfg, draggedFile, inputMode);
+    break;
+  default:
+    break;
   }
+
+  //  save the landmap to classifiedLandInput.png
+  Fwg::Gfx::Png::save(landInput, outputPath);
 
   uiUtils->resetTexture();
 }
@@ -410,9 +406,9 @@ void LandUI::configureLandElevationFactors(Fwg::Cfg &cfg,
     const int itemsPerRow = 3;
     int counter = 0;
 
-    auto addFactor = [&](const char *label, float &value) {
-      ImGui::BeginGroup(); // group label + input as one block
-      ImGui::Text("%-*s", (int)labelWidth, label); // fixed width label
+    auto addFactor = [&](const std::string &label, float &value) {
+      ImGui::BeginGroup();
+      ImGui::Text("%-*s", (int)labelWidth, label);
       ImGui::SameLine();
       ImGui::SetNextItemWidth(inputWidth);
       ImGui::InputFloat((std::string("##") + label).c_str(), &value, 0.01f,
@@ -424,19 +420,11 @@ void LandUI::configureLandElevationFactors(Fwg::Cfg &cfg,
         ImGui::SameLine();
     };
 
-    // Example usage
-    addFactor("Plains", cfg.plainsFactor);
-    addFactor("Low Hills", cfg.lowhillsFactor);
-    addFactor("Hills", cfg.hillsFactor);
-    addFactor("Mountains", cfg.mountainsFactor);
-    addFactor("Peaks", cfg.peaksFactor);
-    addFactor("Steep Peaks", cfg.steepPeaksFactor);
-    addFactor("Cliffs", cfg.cliffsFactor);
-    addFactor("Valley", cfg.valleyFactor);
-    addFactor("Highlands", cfg.highlandsFactor);
-    addFactor("Ocean", cfg.oceanFactor);
-    addFactor("Deep Ocean", cfg.deepOceanFactor);
-    addFactor("Lake", cfg.lakeFactor);
+    // Iterate through landforms in display order
+    for (const auto &landFormDefinition : fwg.terrainData.landformDefinitions) {
+      addFactor(landFormDefinition.name,
+                cfg.landformFactors.at(landFormDefinition.id));
+    }
   }
 }
 
