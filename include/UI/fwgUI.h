@@ -48,6 +48,7 @@ protected:
   std::shared_ptr<std::stringstream> log;
   float frequency = 0.0;
   float zoom = 1.0f;
+  float leftColumnWidth = 0.4f;
   static int seed;
 
   bool redoTerrain = false;
@@ -70,13 +71,9 @@ protected:
     }
   }
 
-  void disableBlock(const Fwg::Gfx::Image &image);
-  void reenableBlock(const Fwg::Gfx::Image &image);
   void initAllowedInput(
       Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
       std::vector<Terrain::LandformDefinition> &landformDefinitions);
-
-  void clearColours(Fwg::Gfx::Image &image);
 
   void loadHeightmapConfigs();
 

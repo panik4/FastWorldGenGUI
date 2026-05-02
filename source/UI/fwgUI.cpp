@@ -5,6 +5,8 @@ namespace Fwg {
 int g_ResizeWidth = 0;
 int g_ResizeHeight = 0;
 int FwgUI::seed = 0;
+static bool analyze = false;
+static int amountClassificationsNeeded = 0;
 
 FwgUI::FwgUI() {
 
@@ -477,9 +479,6 @@ int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-static bool analyze = false;
-static int amountClassificationsNeeded = 0;
-
 int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Land Input")) {
     if (uiUtils->tabSwitchEvent(true)) {
@@ -552,6 +551,8 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static bool updateLayer = false;
   static int selectedLayer = 0;
   static bool rerandomiseSeed = false;
+  static int layerTypeSelection = 0; // 0=Shape, 1=Land, 2=Sea
+  static int previousLayerTypeSelection = 0;
 
   if (UI::Elements::BeginSubTabItem("Heightmap")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -560,14 +561,18 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
             Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap);
         uiUtils->updateImage(0, heightmap);
         uiUtils->updateImage(1, heightmap);
-        // wrap around because we want to show two images
+
         if (updateLayer) {
-          if (selectedLayer < fwg.terrainData.layerData.size() &&
-              fwg.terrainData.layerData[selectedLayer].size() &&
+          auto &selectedLayers =
+              (layerTypeSelection == 0)   ? fwg.terrainData.shapeLayers
+              : (layerTypeSelection == 1) ? fwg.terrainData.landLayers
+                                          : fwg.terrainData.seaLayers;
+          if (selectedLayer < selectedLayers.size() &&
+              selectedLayers[selectedLayer].size() &&
               fwg.terrainData.detailedHeightMap.size()) {
             uiUtils->updateImage(
                 1, Fwg::Gfx::Image(cfg.width, cfg.height, 24,
-                                   fwg.terrainData.layerData[selectedLayer]));
+                                   selectedLayers[selectedLayer]));
           }
           updateLayer = false;
         } else {
@@ -583,158 +588,319 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
     }
 
-    static bool layeredit = false;
     uiUtils->showHelpTextBox("Heightmap");
-    ImGui::PushItemWidth(100.0f);
-    ImGui::SeparatorText(
-        "Generate a simple overview of land area from heightmap "
-        "or drop it in");
 
-    // selection of heightmap preset
+    ImGui::SeparatorText("Heightmap Configuration Presets");
+
+    // Heightmap preset selection with auto-initialization
     static int activeConfigIndex = -1;
-    ImGui::Text("Heightmap configs");
+    static bool initializedDefault = false;
 
-    for (int i = 0; i < heightmapConfigFiles.size(); ++i) {
-      bool isActive = (i == activeConfigIndex);
-
-      if (ImGui::Selectable(heightmapConfigFiles[i].c_str(), isActive)) {
-        activeConfigIndex = i;
-        cfg.readHeightmapConfig(heightmapConfigFiles[i]);
+    // Initialize with default config on first run
+    if (!initializedDefault && heightmapConfigFiles.size() > 0) {
+      // Try to find "default.json" in the list
+      for (int i = 0; i < heightmapConfigFiles.size(); ++i) {
+        if (heightmapConfigFiles[i].find("default.json") != std::string::npos) {
+          activeConfigIndex = i;
+          break;
+        }
       }
-
-      if (isActive)
-        ImGui::SetItemDefaultFocus();
-    }
-    ImGui::Text("Sealevel: %d", cfg.seaLevel);
-
-    if (cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP) {
-      ImGui::SliderFloat("<--Target Land Percentage", &cfg.landPercentage, 0.00,
-                         1.0);
-      ImGui::InputInt("<--Height Adjustments", &cfg.heightAdjustments);
-      ImGui::InputFloat("<--Landlayer coastal distance factor",
-                        &cfg.layerApplicationFactor, 0.1f, 0.1f);
-    } else {
-      ImGui::Text("Landpercentage: %f", cfg.landPercentage);
+      // If "default.json" not found, use first config
+      if (activeConfigIndex == -1) {
+        activeConfigIndex = 0;
+      }
+      initializedDefault = true;
     }
 
-    ImGui::InputDouble("<--Maximum Lake Size Factor", &cfg.lakeMaxShare, 0.01f);
-    if (ImGui::InputInt("<--Maximum Land height", &cfg.maxLandHeight)) {
-      cfg.maxLandHeight = std::clamp(cfg.maxLandHeight, cfg.seaLevel + 1, 255);
+    ImGui::Text("Select Preset:");
+    ImGui::SameLine();
+
+    ImGui::PushItemWidth(300.0f);
+    if (ImGui::BeginCombo("##HeightmapPresets",
+                          activeConfigIndex >= 0 &&
+                                  activeConfigIndex <
+                                      heightmapConfigFiles.size()
+                              ? heightmapConfigFiles[activeConfigIndex].c_str()
+                              : "Select a preset...")) {
+      for (int i = 0; i < heightmapConfigFiles.size(); ++i) {
+        bool isActive = (i == activeConfigIndex);
+        if (ImGui::Selectable(heightmapConfigFiles[i].c_str(), isActive)) {
+          activeConfigIndex = i;
+          cfg.readHeightmapConfig(heightmapConfigFiles[i]);
+        }
+        if (isActive)
+          ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
     }
     ImGui::PopItemWidth();
-    landUI.configureLandElevationFactors(cfg, fwg);
-    ImGui::PushItemWidth(100.0f);
-    ImGui::SameLine();
-    if (ImGui::SliderFloat("<--Heightmap Frequency",
-                           &cfg.heightmapFrequencyModifier, 0.1f, 10.0f,
-                           "ratio = %.1f")) {
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Basic Parameters");
+
+    // Main parameters grid
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+      grid.AddText("Sealevel", "%d", cfg.seaLevel);
+
+      if (cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP) {
+        grid.AddSliderFloat("Target Land %", &cfg.landPercentage, 0.0f, 1.0f);
+        grid.AddInputInt("Height Adjustments", &cfg.heightAdjustments, 0, 100);
+        grid.AddInputFloat("Coastal Distance", &cfg.layerApplicationFactor,
+                           0.0f, 10.0f);
+      } else {
+        grid.AddText("Land Percentage", "%.2f%%", cfg.landPercentage * 100.0f);
+        grid.NextRow(); // Skip to next row for alignment
+      }
+
+      grid.AddInputDouble("Lake Size Factor", &cfg.lakeMaxShare, 0.0, 1.0);
+      if (grid.AddInputInt("Max Land Height", &cfg.maxLandHeight,
+                           cfg.seaLevel + 1, 255)) {
+        cfg.maxLandHeight =
+            std::clamp(cfg.maxLandHeight, cfg.seaLevel + 1, 255);
+      }
     }
-    ImGui::SliderFloat("<--Width edge Factor", &cfg.heightmapWidthEdgeModifier,
-                       0.0f, 10.0f, "ratio = %.1f");
-    ImGui::SliderFloat("<--Height edge Factor",
-                       &cfg.heightmapHeightEdgeModifier, 0.0f, 10.0f,
-                       "ratio = %.1f");
-    ImGui::Checkbox("<--Layer edit", &layeredit);
-    if (layeredit) {
-      ImGui::SeparatorText(
-          "Edit the settings of the selected layer. On the left is the "
-          "finished "
-          "heightmap, on the right is the currently selected layer");
-      ImGui::SliderInt("<--Layers used for generation", &cfg.layerAmount, 1,
-                       cfg.maxLayerAmount);
+
+    ImGui::Spacing();
+
+    landUI.configureLandElevationFactors(cfg, fwg);
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Advanced Heightmap Settings");
+
+    // Advanced settings grid
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+      grid.AddSliderFloat("Heightmap Frequency",
+                          &cfg.heightmapFrequencyModifier, 0.1f, 10.0f);
+      grid.AddSliderFloat("Width Edge Factor", &cfg.heightmapWidthEdgeModifier,
+                          0.0f, 10.0f);
+      grid.AddSliderFloat("Height Edge Factor",
+                          &cfg.heightmapHeightEdgeModifier, 0.0f, 10.0f);
+    }
+
+    ImGui::Spacing();
+
+    // Replace checkbox with collapsing header
+    if (ImGui::CollapsingHeader("Layer Editor", ImGuiTreeNodeFlags_None)) {
+      ImGui::Spacing();
+
+      // Layer type selector
+      ImGui::Text("Layer Type:");
+      ImGui::SameLine();
+      ImGui::RadioButton("Shape", &layerTypeSelection, 0);
+      ImGui::SameLine();
+      ImGui::RadioButton("Land", &layerTypeSelection, 1);
+      ImGui::SameLine();
+      ImGui::RadioButton("Sea", &layerTypeSelection, 2);
+
+      // Reset selection when switching layer types
+      if (previousLayerTypeSelection != layerTypeSelection) {
+        selectedLayer = 0;
+        updateLayer = true;
+        uiUtils->resetTexture(1);
+        previousLayerTypeSelection = layerTypeSelection;
+      }
+
+      // Get current layer vector
+      std::vector<LayerConfig> *currentLayers = nullptr;
+      const char *layerTypeName = "";
+
+      switch (layerTypeSelection) {
+      case 0:
+        currentLayers = &cfg.shapeLayers;
+        layerTypeName = "Shape";
+        break;
+      case 1:
+        currentLayers = &cfg.landLayers;
+        layerTypeName = "Land";
+        break;
+      case 2:
+        currentLayers = &cfg.seaLayers;
+        layerTypeName = "Sea";
+        break;
+      }
+
+      ImGui::Text("%s Layers: %zu", layerTypeName, currentLayers->size());
+      ImGui::Spacing();
+
+      // Layer selection and editing in two columns
       {
         ImGui::BeginChild("LayerSelection",
-                          ImVec2(ImGui::GetContentRegionAvail().x * 0.2f,
-                                 ImGui::GetContentRegionAvail().y * 0.8f),
-                          false);
-        // TODO: ugly
-        std::vector<std::string> stringRepr;
-        stringRepr.resize(cfg.layerAmount);
-        std::vector<const char *> cStrRepr;
-        cStrRepr.resize(cfg.layerAmount);
-        for (int i = 0; i < cfg.layerAmount; i++) {
-          stringRepr[i] = std::to_string(i);
-          cStrRepr[i] = stringRepr[i].c_str();
+                          ImVec2(ImGui::GetContentRegionAvail().x * 0.25f,
+                                 ImGui::GetContentRegionAvail().y * 0.6f),
+                          true, ImGuiWindowFlags_None);
+
+        ImGui::TextUnformatted("Layer List");
+        ImGui::Separator();
+
+        for (int i = 0; i < currentLayers->size(); i++) {
+          char label[64];
+          snprintf(label, sizeof(label), "%s Layer %d", layerTypeName, i);
+
+          ImGui::PushID(i);
+          if (ImGui::Selectable(label, selectedLayer == i)) {
+            selectedLayer = i;
+            updateLayer = true;
+            uiUtils->resetTexture(1);
+          }
+          ImGui::PopID();
         }
-        ImGui::Text("Select Layer");
-        if (ImGui::ListBox("", &selectedLayer, cStrRepr.data(), cStrRepr.size(),
-                           12)) {
-          updateLayer = true;
-          uiUtils->resetTexture(1);
+
+        ImGui::Separator();
+
+        if (ImGui::Button("Add Layer", ImVec2(-1, 0))) {
+          LayerConfig newLayer{};
+          newLayer.noiseType = 3;
+          newLayer.fractalType = 3;
+          newLayer.type = static_cast<LayerType>(layerTypeSelection);
+          newLayer.fractalFrequency = 0.5f;
+          newLayer.fractalOctaves = 11;
+          newLayer.fractalGain = 0.5f;
+          newLayer.seed = RandNum::getRandom<int>();
+          newLayer.widthEdge = 10.0;
+          newLayer.heightEdge = 0.0;
+          newLayer.weight = 1.0;
+          newLayer.altitudeWeightStart = 0.0;
+          newLayer.altitudeWeightEnd = 0.0;
+          newLayer.minHeight = 0;
+          newLayer.maxHeight = 100;
+          newLayer.tanFactor = 0.0;
+
+          currentLayers->push_back(newLayer);
+          selectedLayer = currentLayers->size() - 1;
         }
+
+        if (currentLayers->size() > 0 &&
+            ImGui::Button("Remove Layer", ImVec2(-1, 0))) {
+          if (selectedLayer < currentLayers->size()) {
+            currentLayers->erase(currentLayers->begin() + selectedLayer);
+            selectedLayer = std::max(0, selectedLayer - 1);
+            updateLayer = true;
+          }
+        }
+
         ImGui::EndChild();
       }
+
       ImGui::SameLine();
+
+      // Layer properties editor
       {
         ImGui::BeginChild("LayerEdit",
                           ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
-                                 ImGui::GetContentRegionAvail().y * 0.8f),
-                          false);
-        ImGui::PushItemWidth(100.0f);
-        bool landLayer = cfg.landLayer[selectedLayer];
-        ImGui::Checkbox("<--LandLayer", &landLayer);
-        cfg.landLayer[selectedLayer] = landLayer;
-        bool seaLayer = cfg.seaLayer[selectedLayer];
-        ImGui::SameLine();
-        ImGui::Checkbox("<--SeaLayer", &seaLayer);
-        cfg.seaLayer[selectedLayer] = seaLayer;
+                                 ImGui::GetContentRegionAvail().y * 0.6f),
+                          true, ImGuiWindowFlags_None);
 
-        static const char *NoiseTypeNames[] = {"OpenSimplex2", "OpenSimplex2S",
-                                               "Cellular",     "Perlin",
-                                               "ValueCubic",   "Value"};
+        if (selectedLayer < currentLayers->size()) {
+          LayerConfig &layer = (*currentLayers)[selectedLayer];
 
-        static const char *FractalTypeNames[] = {"None",
-                                                 "FBm",
-                                                 "Ridged",
-                                                 "PingPong",
-                                                 "DomainWarpProgressive",
-                                                 "DomainWarpIndependent"};
+          ImGui::Text("Editing %s Layer %d", layerTypeName, selectedLayer);
+          ImGui::Separator();
+          ImGui::Spacing();
 
-        int &noiseType = cfg.noiseType[selectedLayer];
-        int &fractalType = cfg.fractalType[selectedLayer];
+          // Noise settings grid
+          {
+            UI::Elements::GridLayout grid(2, 180.0f, 8.0f);
 
-        // Clamp indices for safety
-        noiseType =
-            std::clamp(noiseType, 0, (int)(IM_ARRAYSIZE(NoiseTypeNames)) - 1);
-        fractalType = std::clamp(fractalType, 0,
-                                 (int)(IM_ARRAYSIZE(FractalTypeNames)) - 1);
+            static const char *NoiseTypeNames[] = {
+                "OpenSimplex2", "OpenSimplex2S", "Cellular",
+                "Perlin",       "ValueCubic",    "Value"};
 
-        // Show enum as nice dropdowns
-        ImGui::Combo("Noise Type", &noiseType, NoiseTypeNames,
-                     IM_ARRAYSIZE(NoiseTypeNames));
-        ImGui::Combo("Fractal Type", &fractalType, FractalTypeNames,
-                     IM_ARRAYSIZE(FractalTypeNames));
+            static const char *FractalTypeNames[] = {"None",
+                                                     "FBm",
+                                                     "Ridged",
+                                                     "PingPong",
+                                                     "DomainWarpProgressive",
+                                                     "DomainWarpIndependent"};
 
-        ImGui::InputFloat("<--FractalFrequency",
-                          &cfg.fractalFrequency[selectedLayer], 0.1);
-        ImGui::InputInt("<--fractalOctaves", &cfg.fractalOctaves[selectedLayer],
-                        1);
-        ImGui::InputFloat("<--fractalGain", &cfg.fractalGain[selectedLayer],
-                          0.05);
-        ImGui::InputDouble("<--Weight", &cfg.weight[selectedLayer], 0.05);
-        int tempInt = std::get<0>(cfg.heightRange[selectedLayer]);
-        ImGui::InputInt("<--minHeight", &tempInt, 5);
-        std::get<0>(cfg.heightRange[selectedLayer]) =
-            static_cast<unsigned char>(tempInt);
-        int tempInt2 = std::get<1>(cfg.heightRange[selectedLayer]);
-        ImGui::InputInt("<--maxHeight", &tempInt2, 5);
-        std::get<1>(cfg.heightRange[selectedLayer]) =
-            static_cast<unsigned char>(tempInt2);
-        ImGui::InputDouble("<--Tanfactor", &cfg.tanFactor[selectedLayer], 0.01);
-        ImGui::InputDouble("<--widthEdge", &cfg.widthEdge[selectedLayer], 1);
-        ImGui::InputDouble("<--heightEdge", &cfg.heightEdge[selectedLayer], 1);
-        ImGui::InputDouble("<--Edge limit factor", &cfg.edgeLimitFactor, 0.1);
-        ImGui::PopItemWidth();
+            // Clamp indices
+            layer.noiseType = std::clamp(
+                layer.noiseType, 0, (int)(IM_ARRAYSIZE(NoiseTypeNames)) - 1);
+            layer.fractalType =
+                std::clamp(layer.fractalType, 0,
+                           (int)(IM_ARRAYSIZE(FractalTypeNames)) - 1);
+
+            // Show combo boxes inline
+            ImGui::PushItemWidth(180.0f);
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("%-*s", 25, "Noise Type");
+            ImGui::SameLine();
+            ImGui::Combo("##NoiseType", &layer.noiseType, NoiseTypeNames,
+                         IM_ARRAYSIZE(NoiseTypeNames));
+
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("%-*s", 25, "Fractal Type");
+            ImGui::SameLine();
+            ImGui::Combo("##FractalType", &layer.fractalType, FractalTypeNames,
+                         IM_ARRAYSIZE(FractalTypeNames));
+            ImGui::PopItemWidth();
+
+            grid.AddInputFloat("Frequency", &layer.fractalFrequency, 0.01f,
+                               10.0f);
+            grid.AddInputInt("Octaves", &layer.fractalOctaves, 1, 20);
+            grid.AddInputFloat("Gain", &layer.fractalGain, 0.0f, 1.0f);
+            grid.AddInputDouble("Weight", &layer.weight, 0.0, 10.0);
+
+            int tempMinHeight = layer.minHeight;
+            if (grid.AddInputInt("Min Height", &tempMinHeight, 0, 255)) {
+              layer.minHeight =
+                  static_cast<unsigned char>(std::clamp(tempMinHeight, 0, 255));
+            }
+
+            int tempMaxHeight = layer.maxHeight;
+            if (grid.AddInputInt("Max Height", &tempMaxHeight, 0, 255)) {
+              layer.maxHeight =
+                  static_cast<unsigned char>(std::clamp(tempMaxHeight, 0, 255));
+            }
+
+            grid.AddInputDouble("Tan Factor", &layer.tanFactor, 0.0, 100.0);
+            grid.AddInputDouble("Width Edge", &layer.widthEdge, 0.0, 100.0);
+            grid.AddInputDouble("Height Edge", &layer.heightEdge, 0.0, 100.0);
+
+            if (layerTypeSelection != 0) { // Land or Sea layers
+              ImGui::Spacing();
+              ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.2f, 1.0f),
+                                 "Altitude Weight Settings");
+              grid.AddInputDouble("Weight Start", &layer.altitudeWeightStart,
+                                  0.0, 1.0);
+              grid.AddInputDouble("Weight End", &layer.altitudeWeightEnd, 0.0,
+                                  1.0);
+            }
+          }
+
+          ImGui::Spacing();
+          ImGui::Separator();
+          ImGui::Spacing();
+
+          if (ImGui::Button("Randomize Seed", ImVec2(150, 0))) {
+            layer.seed = RandNum::getRandom<int>();
+          }
+          ImGui::SameLine();
+          ImGui::Text("Current Seed: %d", layer.seed);
+
+        } else {
+          ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f),
+                             "No layer selected or layer list is empty");
+        }
+
         ImGui::EndChild();
       }
-    }
-    ImGui::SeparatorText("Generate using buttons or drop in file");
-    ImGui::Checkbox("Change seed on every generation click", &rerandomiseSeed);
-    std::string buttonText = "";
+    } // End of CollapsingHeader
 
+    ImGui::Spacing();
+    ImGui::SeparatorText("Generation Controls");
+
+    ImGui::Checkbox("Randomize seed on each generation", &rerandomiseSeed);
+    ImGui::Spacing();
+
+    // Generation buttons based on input mode
     switch (cfg.landInputMode) {
     case Fwg::Terrain::InputMode::HEIGHTMAP: {
-      if (ImGui::Button("Generate random worldmap")) {
+      if (UI::Elements::Button("Generate Random Worldmap", false,
+                               ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
           cfg.reRandomize();
@@ -745,9 +911,16 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           updateLayer = true;
           return true;
         });
-        updateLayer = true;
       }
-      if (ImGui::Button("Generate detailed heightmap from heightmap shape")) {
+
+      ImGui::SameLine();
+
+      if (UI::Elements::Button("Apply Land/Sea Layers", false,
+                               ImVec2(250, 0))) {
+        if (rerandomiseSeed) {
+          cfg.randomSeed = true;
+          cfg.reRandomize();
+        }
         computationFutureBool = runAsync([&fwg, this]() {
           fwg.genLand();
           updateLayer = true;
@@ -755,10 +928,24 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           return true;
         });
       }
+
+      if (UI::Elements::ImportantStepButton(
+              "Generate Complete Heightmap from new seed", ImVec2(250, 0))) {
+        cfg.randomSeed = true;
+        cfg.reRandomize();
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genHeight();
+          fwg.genLand();
+          uiUtils->resetTexture();
+          updateLayer = true;
+          return true;
+        });
+      }
       break;
     }
+
     case Fwg::Terrain::InputMode::HEIGHTSKETCH: {
-      if (ImGui::Button("Generate land shape from sketch heightmap")) {
+      if (UI::Elements::Button("Generate from Sketch", false, ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
           cfg.reRandomize();
@@ -767,7 +954,10 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                                cfg.landInputMode);
         uiUtils->resetTexture();
       }
-      if (ImGui::Button("Generate detailed heightmap from heightmap shape")) {
+
+      ImGui::SameLine();
+
+      if (UI::Elements::Button("Apply Detail Layers", false, ImVec2(250, 0))) {
         computationFutureBool = runAsync([&fwg, this]() {
           fwg.genLand();
           uiUtils->resetTexture();
@@ -796,7 +986,8 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
               [&]() { return amountClassificationsNeeded <= 0 && !analyze; }}});
 
       if (classificationGuard.ready() &&
-          ImGui::Button("Generate detailed heightmap from landform input")) {
+          UI::Elements::ImportantStepButton("Generate from Landform Input",
+                                            ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
           cfg.reRandomize();
@@ -813,8 +1004,10 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
       break;
     }
+
     case Fwg::Terrain::InputMode::LANDMASK: {
-      if (ImGui::Button("Generate detailed heightmap from landmask input")) {
+      if (UI::Elements::ImportantStepButton("Generate from Landmask",
+                                            ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
           cfg.reRandomize();
@@ -835,23 +1028,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       break;
     }
 
-    ImGui::PopItemWidth();
-    ImGui::PushItemWidth(300.0f);
-    if (cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP &&
-        ImGui::Button("Generate complete random heightmap from new seed")) {
-      cfg.randomSeed = true;
-      cfg.reRandomize();
-      computationFutureBool = runAsync([&fwg, &cfg, this]() {
-        fwg.genHeight();
-        fwg.genLand();
-        uiUtils->resetTexture();
-        updateLayer = true;
-        return true;
-      });
-    }
-
-    ImGui::PopItemWidth();
-    // drag event
+    // Drag & drop handler
     if (triggeredDrag) {
       triggeredDrag = false;
       cfg.allowHeightmapModification = false;
@@ -864,42 +1041,6 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-void FwgUI::clearColours(Fwg::Gfx::Image &image) {
-  static int severity = 0;
-  // first count every colour in a colourTMap
-  Utils::ColourTMap<std::vector<int>> colourCounter;
-  for (int pix = 0; pix < image.size(); pix++) {
-    const auto &col = image[pix];
-    if (!colourCounter.contains(col)) {
-      colourCounter.setValue(col, {});
-      colourCounter[col].push_back(pix);
-    } else {
-      colourCounter[col].push_back(pix);
-    }
-  }
-  std::vector<Fwg::Gfx::Colour> colorsSortedByDistance;
-
-  for (auto &elem : colourCounter.getMap()) {
-    auto &col = elem.first;
-    if (elem.second.size() <
-        image.size() / std::clamp((100 - severity), 1, 100)) {
-      for (auto &elem2 : colourCounter.getMap()) {
-        if (elem2.second.size() &&
-            col.distance(elem2.first) < (10 + severity)) {
-          elem.second.insert(elem.second.end(), elem2.second.begin(),
-                             elem2.second.end());
-
-          for (auto pix : elem2.second) {
-            image.setColourAtIndex(pix, col);
-          }
-          elem2.second.clear();
-        }
-      }
-    }
-  }
-  severity++;
-}
-
 int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Normalmap")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -909,23 +1050,27 @@ int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           1, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
     }
     uiUtils->showHelpTextBox("Normalmap");
-    ImGui::SeparatorText("Generate a NormalMap.");
 
-    ImGui::PushItemWidth(200.0f);
-    ImGui::InputDouble("Sobelfactor", &cfg.sobelFactor, 0.05, 0.5);
-    // limit sobel to more than 0.00
-    cfg.sobelFactor = std::max<double>(cfg.sobelFactor, 0.01);
-    ImGui::PopItemWidth();
+    ImGui::SeparatorText("Normal Map Configuration");
 
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      grid.AddInputDouble("Sobel Factor", &cfg.sobelFactor, 0.01, 10.0);
+    }
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::heightmap(fwg.terrainData)});
 
-    if (guard.ready() && ImGui::Button("Generate Normalmap")) {
-      computationFutureBool = runAsync([&fwg, &cfg, this]() {
-        fwg.genSobelMap(cfg);
-        uiUtils->resetTexture(0);
-        return true;
-      });
+    if (guard.ready()) {
+      if (UI::Elements::ImportantStepButton("Generate Normalmap",
+                                            ImVec2(200, 0))) {
+        computationFutureBool = runAsync([&fwg, &cfg, this]() {
+          fwg.genSobelMap(cfg);
+          uiUtils->resetTexture(0);
+          return true;
+        });
+      }
     }
 
     if (triggeredDrag) {
@@ -952,32 +1097,45 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("Climate");
 
-    ImGui::PushItemWidth(200.0f);
-    // evaluate multiple inputs at once so short-circuit evaluation doesn't
-    // trigger flickering
-    if (longCircuitLogicalOr(
-            ImGui::InputDouble("<--Base temperature", &cfg.baseTemperature,
-                               0.1),
-            ImGui::InputDouble("<--Base humidity", &cfg.baseHumidity, 0.1),
-            ImGui::InputDouble("<--Fantasy climate frequency modifier",
-                               &cfg.fantasyClimateFrequency, 0.1),
-            ImGui::Checkbox("<--Fantasy climate", &cfg.fantasyClimate))
+    ImGui::SeparatorText("Base Climate Parameters");
 
-    ) {
-      redoHumidity = true;
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+      if (grid.AddInputDouble("Base Temperature", &cfg.baseTemperature, -100.0,
+                              100.0) |
+          grid.AddInputDouble("Base Humidity", &cfg.baseHumidity, 0.0, 100.0) |
+          grid.AddInputDouble("Fantasy Frequency", &cfg.fantasyClimateFrequency,
+                              0.0, 10.0)) {
+        redoHumidity = true;
+      }
+
+      // Fantasy climate checkbox on new row
+      grid.NextRow();
+      ImGui::Checkbox("Fantasy Climate", &cfg.fantasyClimate);
+      if (ImGui::IsItemDeactivatedAfterEdit()) {
+        redoHumidity = true;
+      }
     }
-    if (longCircuitLogicalOr(
-            ImGui::InputDouble("<--Latitude high", &cfg.latHigh, 0.1),
-            ImGui::InputDouble("<--Latitude low", &cfg.latLow, 0.1),
-            ImGui::InputDouble("<--River amount multiplier", &cfg.riverFactor,
-                               0.1),
-            ImGui::InputDouble("<--River humidity multiplier",
-                               &cfg.riverHumidityFactor, 0.1),
-            ImGui::InputDouble("<--River effect range multiplier",
-                               &cfg.riverEffectRangeFactor, 0.1))) {
-      redoHumidity = true;
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Latitude & River Settings");
+
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+      if (grid.AddInputDouble("Latitude High", &cfg.latHigh, -90.0, 90.0) |
+          grid.AddInputDouble("Latitude Low", &cfg.latLow, -90.0, 90.0) |
+          grid.AddInputDouble("River Amount", &cfg.riverFactor, 0.0, 10.0) |
+          grid.AddInputDouble("River Humidity", &cfg.riverHumidityFactor, 0.0,
+                              10.0) |
+          grid.AddInputDouble("River Range", &cfg.riverEffectRangeFactor, 0.0,
+                              10.0)) {
+        redoHumidity = true;
+      }
     }
-    ImGui::PopItemWidth();
+
+    ImGui::Spacing();
 
     // Scoped guard - only affects the automation button
     {
@@ -999,6 +1157,7 @@ int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         });
       }
     }
+
     if (UI::Elements::BeginSubTabBar("Climate Generation", 0.0f)) {
       showTemperatureMap(cfg, fwg);
       showHumidityTab(cfg, fwg);
@@ -1108,11 +1267,13 @@ int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("Temperature");
 
-    ImGui::SeparatorText("Generate temperature map or drop it in. You can also "
-                         "draw in this map");
+    ImGui::SeparatorText("Temperature Map Generation");
+
     static bool applyAltitudeEffect = false;
-    ImGui::Checkbox("<--Apply elevation effect when loading temperature",
+    ImGui::Checkbox("Apply elevation effect when loading",
                     &applyAltitudeEffect);
+
+    ImGui::Spacing();
 
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
@@ -1120,7 +1281,8 @@ int FwgUI::showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
          UI::PrerequisiteChecker::landMask(fwg.terrainData)});
 
     if (guard.ready()) {
-      if (ImGui::Button("Generate Temperature Map")) {
+      if (UI::Elements::ImportantStepButton("Generate Temperature Map",
+                                            ImVec2(220, 0))) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genTemperatures(cfg);
           uiUtils->resetTexture();
@@ -1148,11 +1310,14 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     uiUtils->showHelpTextBox("Humidity");
-    ImGui::SeparatorText(
-        "Generate humidity map or drop it in. You can also draw in this map");
-    static bool applyEleveationEffect = false;
-    ImGui::Checkbox("<--Apply elevation effect when loading humidity",
-                    &applyEleveationEffect);
+
+    ImGui::SeparatorText("Humidity Map Generation");
+
+    static bool applyElevationEffect = false;
+    ImGui::Checkbox("Apply elevation effect when loading",
+                    &applyElevationEffect);
+
+    ImGui::Spacing();
 
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
@@ -1160,7 +1325,8 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
          UI::PrerequisiteChecker::landMask(fwg.terrainData)});
 
     if (guard.ready()) {
-      if (ImGui::Button("Generate Humidity Map")) {
+      if (UI::Elements::ImportantStepButton("Generate Humidity Map",
+                                            ImVec2(220, 0))) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genHumidity(cfg);
           uiUtils->resetTexture(0);
@@ -1171,7 +1337,7 @@ int FwgUI::showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (triggeredDrag) {
         fwg.loadHumidity(cfg,
                          Fwg::IO::Reader::readGenericImage(draggedFile, cfg),
-                         applyEleveationEffect);
+                         applyElevationEffect);
         redoHumidity = false;
         triggeredDrag = false;
         uiUtils->resetTexture();
@@ -1191,8 +1357,16 @@ int FwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     uiUtils->showHelpTextBox("Rivers");
-    ImGui::InputDouble("River amount multiplier", &cfg.riverFactor);
 
+    ImGui::SeparatorText("River Configuration");
+
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      grid.AddInputDouble("River Multiplier", &cfg.riverFactor, 0.0, 10.0);
+      grid.AddText("River Count", "%d", (int)fwg.climateData.rivers.size());
+    }
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
          UI::PrerequisiteChecker::landforms(fwg.terrainData),
@@ -1200,7 +1374,8 @@ int FwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
          UI::PrerequisiteChecker::humidity(fwg.climateData)});
 
     if (guard.ready()) {
-      if (ImGui::Button("Generate River Map")) {
+      if (UI::Elements::ImportantStepButton("Generate River Map",
+                                            ImVec2(200, 0))) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genRivers(cfg);
           uiUtils->resetTexture();
@@ -1215,13 +1390,11 @@ int FwgUI::showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         triggeredDrag = false;
       }
     }
-    ImGui::Value("Amount of rivers: ", (int)fwg.climateData.rivers.size());
 
     ImGui::EndTabItem();
   }
   return 0;
 }
-
 int FwgUI::showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Climate")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -1314,31 +1487,39 @@ int FwgUI::showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("Forests");
 
-    ImGui::PushItemWidth(200.0f);
-    ImGui::InputDouble("borealDensity", &cfg.borealDensity, 0.1);
-    ImGui::InputDouble("temperateNeedleDensity", &cfg.temperateNeedleDensity,
-                       0.1);
-    ImGui::InputDouble("temperateMixedDensity", &cfg.temperateMixedDensity,
-                       0.1);
-    ImGui::InputDouble("sparseDensity", &cfg.sparseDensity, 0.1);
-    ImGui::InputDouble("tropicalDryDensity", &cfg.tropicalDryDensity, 0.1);
-    ImGui::InputDouble("tropicalMoistDensity", &cfg.tropicalMoistDensity, 0.1);
+    ImGui::SeparatorText("Forest Density Configuration");
+
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+      grid.AddInputDouble("Boreal Density", &cfg.borealDensity, 0.0, 1.0);
+      grid.AddInputDouble("Temperate Needle", &cfg.temperateNeedleDensity, 0.0,
+                          1.0);
+      grid.AddInputDouble("Temperate Mixed", &cfg.temperateMixedDensity, 0.0,
+                          1.0);
+      grid.AddInputDouble("Sparse Density", &cfg.sparseDensity, 0.0, 1.0);
+      grid.AddInputDouble("Tropical Dry", &cfg.tropicalDryDensity, 0.0, 1.0);
+      grid.AddInputDouble("Tropical Moist", &cfg.tropicalMoistDensity, 0.0,
+                          1.0);
+    }
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
          UI::PrerequisiteChecker::landforms(fwg.terrainData),
          UI::PrerequisiteChecker::landMask(fwg.terrainData),
          UI::PrerequisiteChecker::humidity(fwg.climateData),
          UI::PrerequisiteChecker::temperature(fwg.climateData)});
+
     if (guard.ready()) {
-      if (ImGui::Button("Generate Treemap")) {
+      if (UI::Elements::ImportantStepButton("Generate Forest Map",
+                                            ImVec2(200, 0))) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genForests(cfg);
           uiUtils->resetTexture();
           return true;
         });
       }
-
-      ImGui::PopItemWidth();
 
       if (triggeredDrag) {
         fwg.loadForests(cfg, draggedFile);
@@ -1438,13 +1619,18 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
     uiUtils->showHelpTextBox("Density");
 
+    ImGui::SeparatorText("Province & State Density Map");
+    ImGui::TextWrapped("This map determines the density of provinces and "
+                       "states based on climate habitability.");
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::climate(fwg.climateData),
          UI::PrerequisiteChecker::landforms(fwg.terrainData)});
 
     if (guard.ready()) {
-      if (ImGui::Button(
-              "Generate province and state density from climate data")) {
+      if (UI::Elements::ImportantStepButton(
+              "Generate Density from Climate Data", ImVec2(250, 0))) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genHabitability(cfg);
           uiUtils->resetTexture(0);
@@ -1465,7 +1651,6 @@ int FwgUI::showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   return 0;
 }
-
 void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("SuperSegments")) {
     if (uiUtils->tabSwitchEvent()) {
@@ -1477,26 +1662,32 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("SuperSegments");
 
-    ImGui::PushItemWidth(300.0f);
+    ImGui::SeparatorText("SuperSegment Generation");
+    ImGui::TextWrapped("SuperSegments are large landmasses and ocean regions.");
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::climate(fwg.climateData),
          UI::PrerequisiteChecker::landforms(fwg.terrainData),
          UI::PrerequisiteChecker::habitability(fwg.climateData)});
+
     if (guard.ready()) {
-      if (ImGui::Button("Generate supersegment template images to draw in.")) {
+      if (UI::Elements::Button("Generate Template Images", false,
+                               ImVec2(220, 0))) {
         Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
                                               fwg.worldMap, true, false, false);
       }
-      if (ImGui::Button(
-              "Generate SuperSegments from landbodies and ocean/water "
-              "segments")) {
+
+      ImGui::SameLine();
+
+      if (UI::Elements::ImportantStepButton("Generate SuperSegments",
+                                            ImVec2(220, 0))) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           fwg.genSuperSegments(cfg);
           uiUtils->resetTexture();
           return true;
         });
       }
-      ImGui::PopItemWidth();
 
       if (triggeredDrag) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
@@ -1524,7 +1715,6 @@ void FwgUI::showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::EndTabItem();
   }
 }
-
 void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static auto lastEvent = std::chrono::high_resolution_clock::now();
 
@@ -1540,23 +1730,30 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("Segments");
 
-    ImGui::PushItemWidth(300.0f);
-    // To change the segmentCostInfluence value
-    ImGui::InputDouble("Segment Cost Influence", &cfg.segmentCostInfluence,
-                       0.01, 0.1);
-    ImGui::InputDouble("Segment Distance Influence",
-                       &cfg.segmentDistanceInfluence, 0.01, 0.1);
-    if (ImGui::InputInt("targetLandRegionAmount",
-                        &cfg.targetLandRegionAmount)) {
-      cfg.autoLandRegionParams = true;
-      cfg.calcAreaParameters();
-    }
-    if (ImGui::InputInt("targetSeaRegionAmount", &cfg.targetSeaRegionAmount)) {
-      cfg.autoSeaRegionParams = true;
-      cfg.calcAreaParameters();
-    }
-    ImGui::PopItemWidth();
+    ImGui::SeparatorText("Segment Configuration");
 
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+      grid.AddInputDouble("Cost Influence", &cfg.segmentCostInfluence, 0.0,
+                          10.0);
+      grid.AddInputDouble("Distance Influence", &cfg.segmentDistanceInfluence,
+                          0.0, 10.0);
+
+      if (grid.AddInputInt("Target Land Regions", &cfg.targetLandRegionAmount,
+                           1, 1000)) {
+        cfg.autoLandRegionParams = true;
+        cfg.calcAreaParameters();
+      }
+
+      if (grid.AddInputInt("Target Sea Regions", &cfg.targetSeaRegionAmount, 1,
+                           1000)) {
+        cfg.autoSeaRegionParams = true;
+        cfg.calcAreaParameters();
+      }
+    }
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::climate(fwg.climateData),
          UI::PrerequisiteChecker::landforms(fwg.terrainData),
@@ -1564,20 +1761,27 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
          UI::PrerequisiteChecker::superSegments(fwg.areaData)});
 
     if (guard.ready()) {
-      ImGui::Text("The map has %i land segments",
-                  static_cast<int>(fwg.areaData.landSegments));
-      ImGui::Text("The map has %i sea segments",
-                  static_cast<int>(fwg.areaData.seaSegments));
-      ImGui::Text("The map has %i lake segments",
-                  static_cast<int>(fwg.areaData.lakeSegments));
+      ImGui::SeparatorText("Segment Statistics");
 
-      if (ImGui::Button("Generate segment template images to draw in.")) {
+      {
+        UI::Elements::GridLayout grid(3, 150.0f, 12.0f);
+        grid.AddText("Land Segments", "%d", (int)fwg.areaData.landSegments);
+        grid.AddText("Sea Segments", "%d", (int)fwg.areaData.seaSegments);
+        grid.AddText("Lake Segments", "%d", (int)fwg.areaData.lakeSegments);
+      }
+
+      ImGui::Spacing();
+
+      if (UI::Elements::Button("Generate Template Images", false,
+                               ImVec2(220, 0))) {
         Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
                                               fwg.worldMap, false, true, false);
       }
 
-      if (ImGui::Button("Generate Segments")) {
+      ImGui::SameLine();
 
+      if (UI::Elements::ImportantStepButton("Generate Segments",
+                                            ImVec2(220, 0))) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           modifiedAreas = true;
           fwg.genSegments(cfg);
@@ -1597,15 +1801,9 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                                       draggedFile, cfg, evaluationAreas));
           } else {
             auto image = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
-
-            // detect all areas, give them unique colours
             Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
                 image, evaluationAreas);
-            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test1.png");
-            // now that we have modified the input image with colours filling
-            // the areas between borders, we can remove the borders
             Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
-            Fwg::Gfx::Png::save(image, cfg.mapsPath + "test2.png");
             fwg.loadSegments(cfg, image);
           }
           fwg.segmentMap =
@@ -1620,7 +1818,6 @@ void FwgUI::showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::EndTabItem();
   }
 }
-
 int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static auto lastEvent = std::chrono::high_resolution_clock::now();
 
@@ -1636,22 +1833,22 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("Provinces");
 
-    ImGui::PushItemWidth(200.0f);
-    ImGui::SeparatorText("Generate a province map or drop it in");
-    ImGui::InputDouble("Landprovincefactor", &cfg.landProvFactor, 0.1);
-    ImGui::InputDouble("Seaprovincefactor", &cfg.seaProvFactor, 0.1);
-    ImGui::InputDouble("Density Effects", &cfg.provinceDensityEffects, 0.1f);
-    ImGui::InputInt("Minimum size of provinces", &cfg.minProvSize);
-    // don't allow users to go too low
-    cfg.minProvSize = std::max<int>(cfg.minProvSize, 9);
-    ImGui::InputInt("Maximum amount of provinces", &cfg.maxProvAmount, 500);
-    ImGui::PopItemWidth();
-    cfg.landProvFactor = std::clamp(cfg.landProvFactor, 0.0, 10.0);
-    cfg.seaProvFactor = std::clamp(cfg.seaProvFactor, 0.0, 10.0);
-    cfg.provinceDensityEffects =
-        std::clamp(cfg.provinceDensityEffects, 0.0, 1.0);
-    ImGui::Text("The map has %i provinces",
-                static_cast<int>(fwg.areaData.provinces.size()));
+    ImGui::SeparatorText("Province Configuration");
+
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+      grid.AddInputDouble("Land Factor", &cfg.landProvFactor, 0.0, 10.0);
+      grid.AddInputDouble("Sea Factor", &cfg.seaProvFactor, 0.0, 10.0);
+      grid.AddInputDouble("Density Effects", &cfg.provinceDensityEffects, 0.0,
+                          1.0);
+      grid.AddInputInt("Min Province Size", &cfg.minProvSize, 9, 1000);
+      grid.AddInputInt("Max Province Count", &cfg.maxProvAmount, 100, 100000);
+      grid.AddText("Current Provinces", "%d",
+                   (int)fwg.areaData.provinces.size());
+    }
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::climate(fwg.climateData),
          UI::PrerequisiteChecker::landforms(fwg.terrainData),
@@ -1660,12 +1857,16 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
          UI::PrerequisiteChecker::segments(fwg.areaData)});
 
     if (guard.ready()) {
-      if (ImGui::Button("Generate province template images to draw in.")) {
+      if (UI::Elements::Button("Generate Template Images", false,
+                               ImVec2(220, 0))) {
         Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
                                               fwg.worldMap, false, false, true);
       }
 
-      if (ImGui::Button("Generate Provinces Map")) {
+      ImGui::SameLine();
+
+      if (UI::Elements::ImportantStepButton("Generate Provinces",
+                                            ImVec2(220, 0))) {
         modifiedAreas = true;
         cfg.calcAreaParameters();
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
@@ -1689,13 +1890,8 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                                        draggedFile, cfg, evaluationAreas));
           } else {
             auto image = Fwg::IO::Reader::readGenericImage(draggedFile, cfg);
-
-            // detect all areas, give them unique colours
             Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
                 image, evaluationAreas);
-
-            // now that we have modified the input image with colours filling
-            // the areas between borders, we can remove the borders
             Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
             fwg.loadProvinces(cfg, image);
           }
@@ -1709,7 +1905,6 @@ int FwgUI::showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   return 0;
 }
-
 int FwgUI::showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Regions")) {
     uiUtils->tabSwitchEvent();
@@ -1768,11 +1963,16 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     }
     uiUtils->showHelpTextBox("Continents");
 
-    ImGui::PushItemWidth(200.0f);
-    ImGui::InputInt("Maximum amount of continents", &cfg.maxAmountOfContinents,
-                    1);
-    ImGui::PopItemWidth();
+    ImGui::SeparatorText("Continent Configuration");
 
+    {
+      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      grid.AddInputInt("Max Continents", &cfg.maxAmountOfContinents, 1, 50);
+      grid.AddText("Current Continents", "%d",
+                   (int)fwg.areaData.continents.size());
+    }
+
+    ImGui::Spacing();
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::climate(fwg.climateData),
          UI::PrerequisiteChecker::landforms(fwg.terrainData),
@@ -1782,7 +1982,8 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
          UI::PrerequisiteChecker::provinces(fwg.areaData)});
 
     if (guard.ready()) {
-      if (ImGui::Button("Generate Continents from landbodies") ||
+      if (UI::Elements::ImportantStepButton("Generate Continents",
+                                            ImVec2(220, 0)) ||
           (fwg.areaData.continents.empty() && !computationRunning)) {
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
           modifiedAreas = true;
@@ -1811,7 +2012,6 @@ int FwgUI::showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   return 0;
 }
-
 // Helper functions
 
 bool FwgUI::CreateDeviceGL(const char *title, int width, int height) {
@@ -1841,9 +2041,8 @@ bool FwgUI::CreateDeviceGL(const char *title, int width, int height) {
   glfwSwapInterval(1); // Enable vsync
 
   // Load GL through GLAD
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     return false;
-  }
 
   return true;
 }

@@ -3,6 +3,7 @@
 #include <functional>
 #include <imgui.h>
 #include <string>
+#include <algorithm>
 namespace Fwg::UI {
 
 namespace Elements {
@@ -214,6 +215,45 @@ static void HelpMarker(const char *desc) {
     ImGui::EndTooltip();
   }
 }
+
+// Grid layout helper for organized parameter displays
+class GridLayout {
+public:
+    GridLayout(int columns = 3, float labelWidth = 0.0f, float itemSpacing = 8.0f);
+    ~GridLayout();
+    
+    // Text display
+    void AddText(const char* label, const char* format, ...);
+    
+    // Input widgets
+    bool AddInputInt(const char* label, int* value, int min = INT_MIN, int max = INT_MAX);
+    bool AddInputFloat(const char* label, float* value, float min = -FLT_MAX, float max = FLT_MAX);
+    bool AddInputDouble(const char* label, double* value, double min = -DBL_MAX, double max = DBL_MAX);
+    bool AddSliderFloat(const char* label, float* value, float min, float max);
+    bool AddSliderInt(const char* label, int* value, int min, int max);
+    bool AddListBox(const char *label, int *current_item,
+                    const char *const items[], int items_count,
+                    int height_in_items = 4, float listBoxWidth = 0.0f);
+    // Force next item to new row
+    void NextRow();
+    
+    // Get/set current column
+    int GetColumn() const { return currentColumn; }
+    void SetColumn(int col) { currentColumn = col; }
+    
+private:
+    void BeginCell();
+    void EndCell();
+    void CalculateLabelWidth();
+    
+    int columns;
+    int currentColumn;
+    float labelWidth;
+    float inputWidth;
+    float itemSpacing;
+    ImVec2 startPos;
+    std::vector<const char*> pendingLabels; // For auto-width calculation
+};
 }; // namespace Elements
 
 } // namespace Fwg::UI
