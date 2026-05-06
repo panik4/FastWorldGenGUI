@@ -179,7 +179,7 @@ void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   Fwg::Utils::Logging::Logger::logInstance.attachStream(log);
   fwg.configure(cfg);
   loadHeightmapConfigs();
-  initAllowedInput(cfg, fwg.climateData, fwg.terrainData.landformDefinitions);
+  initAllowedInput(cfg, fwg.climateData, cfg.terrainConfig.landformDefinitions);
 }
 
 void FwgUI::defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg) {
@@ -482,7 +482,7 @@ int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Land Input")) {
     if (uiUtils->tabSwitchEvent(true)) {
-      uiUtils->updateImage(0, Fwg::Gfx::landFormMap(fwg.terrainData));
+      uiUtils->updateImage(0, landUI.landInput);
       uiUtils->updateImage(1, Fwg::Gfx::Image());
     }
     uiUtils->showHelpTextBox("Land");
@@ -889,6 +889,12 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         ImGui::EndChild();
       }
     } // End of CollapsingHeader
+    // In showHeightmapTab(), after the Layer Editor CollapsingHeader
+    ImGui::Spacing();
+
+    // Pipeline Editor - called directly, not nested
+    ImGui::SeparatorText("Heightmap Processing Pipeline");
+    landUI.configurePipelineEditor(cfg);
 
     ImGui::Spacing();
     ImGui::SeparatorText("Generation Controls");
@@ -993,7 +999,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           cfg.reRandomize();
         }
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
-          if (fwg.genHeightFromInput(cfg, cfg.mapsPath + "/landformInput.png",
+          if (fwg.genHeightFromInput(cfg, cfg.mapsPath + "/classifiedLandInput.png",
                                      cfg.landInputMode)) {
             fwg.genLand();
           }

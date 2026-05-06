@@ -251,7 +251,7 @@ bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         // set it
         landInputColours.setValue(
             colour, ElevationInput{colour, colour, "Unclassified",
-                                   fwg.terrainData.landformDefinitions[0],
+                                   cfg.terrainConfig.landformDefinitions[0],
                                    inputColourVisualHelp});
         landInputColours[colour].pixels.push_back(imageIndex);
         amountClassificationsNeeded++;
@@ -297,7 +297,7 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
   }
   RenderScrollableLandInput(landInput.imageData,
-                            fwg.terrainData.landformDefinitions);
+                            cfg.terrainConfig.landformDefinitions);
   if (highlightedInputs.size() > 0) {
     ImGui::Text("Before next analysis, apply all types");
     if (ImGui::Button("Apply all")) {
@@ -421,10 +421,516 @@ void LandUI::configureLandElevationFactors(Fwg::Cfg &cfg,
     };
 
     // Iterate through landforms in display order
-    for (const auto &landFormDefinition : fwg.terrainData.landformDefinitions) {
-      addFactor(landFormDefinition.name,
-                cfg.landformFactors.at(landFormDefinition.id));
+    for (auto &landFormDefinition : cfg.terrainConfig.landformDefinitions) {
+      addFactor(landFormDefinition.name, landFormDefinition.landformFactor);
     }
+  }
+  // REMOVED: Pipeline editor call - we'll call it separately
+}
+
+void LandUI::configurePipelineEditor(Fwg::Cfg &cfg) {
+  // Wrap entire editor in collapsible header
+  if (!ImGui::CollapsingHeader("Heightmap Processing Pipeline")) {
+    return;
+  }
+
+  auto &pipeline = cfg.terrainConfig.heightmapPipeline;
+
+  ImGui::Spacing();
+  ImGui::TextWrapped("Configure the order and parameters of heightmap "
+                     "processing operations. Drag to reorder.");
+  ImGui::Spacing();
+
+  // Main container - two columns
+  ImGui::BeginChild("PipelineEditorContainer",
+                    ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), false,
+                    ImGuiWindowFlags_None);
+
+  // ===== LEFT COLUMN: Operation List =====
+  ImGui::BeginChild("OperationList",
+                    ImVec2(ImGui::GetContentRegionAvail().x * 0.45f, 0), true,
+                    ImGuiWindowFlags_None);
+
+  ImGui::Text("Processing Pipeline");
+  ImGui::Separator();
+
+  // Drag-drop target for reordering
+  static int draggedIndex = -1;
+
+  for (int i = 0; i < pipeline.operations.size(); i++) {
+    auto &operation = pipeline.operations[i];
+
+    ImGui::PushID(i);
+
+    // Make the entire row draggable
+    ImGui::BeginGroup();
+
+    // Checkbox for enable/disable
+    ImGui::Checkbox("##enabled", &operation.enabled);
+    ImGui::SameLine();
+
+    // Drag handle indicator
+    ImGui::TextDisabled(":::");
+    ImGui::SameLine();
+
+    // Selectable operation name
+    bool isSelected = (selectedOperationIndex == i);
+    ImVec4 bgColor =
+        isSelected ? ImVec4(0.26f, 0.59f, 0.98f, 0.40f) : ImVec4(0, 0, 0, 0);
+
+    ImGui::PushStyleColor(ImGuiCol_Header, bgColor);
+    if (ImGui::Selectable(operation.name.c_str(), isSelected,
+                          ImGuiSelectableFlags_SpanAllColumns)) {
+      selectedOperationIndex = i;
+    }
+    ImGui::PopStyleColor();
+
+    ImGui::EndGroup();
+
+    // ===== DRAG AND DROP =====
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+      ImGui::SetDragDropPayload("PIPELINE_OPERATION", &i, sizeof(int));
+      ImGui::Text("Moving: %s", operation.name.c_str());
+      draggedIndex = i;
+      ImGui::EndDragDropSource();
+    }
+
+    if (ImGui::BeginDragDropTarget()) {
+      if (const ImGuiPayload *payload =
+              ImGui::AcceptDragDropPayload("PIPELINE_OPERATION")) {
+        int sourceIndex = *(int *)payload->Data;
+
+        // Reorder operations
+        if (sourceIndex != i) {
+          auto temp = pipeline.operations[sourceIndex];
+          pipeline.operations.erase(pipeline.operations.begin() + sourceIndex);
+          pipeline.operations.insert(pipeline.operations.begin() + i, temp);
+
+          // Update selection
+          selectedOperationIndex = i;
+        }
+      }
+      ImGui::EndDragDropTarget();
+    }
+
+    ImGui::PopID();
+  }
+
+  ImGui::Separator();
+  ImGui::Spacing();
+
+  // Add/Remove buttons
+  if (ImGui::Button("+ Add Operation", ImVec2(-1, 0))) {
+    ImGui::OpenPopup("AddOperationPopup");
+  }
+
+  // ===== ADD OPERATION POPUP =====
+  if (ImGui::BeginPopup("AddOperationPopup")) {
+    ImGui::Text("Add Processing Operation");
+    ImGui::Separator();
+
+    struct OpTemplate {
+      Fwg::Terrain::HeightmapOperationType type;
+      const char *name;
+      const char *desc;
+    };
+
+    static const OpTemplate templates[] = {
+        {Fwg::Terrain::HeightmapOperationType::APPLY_LAND_LAYERS,
+         "Apply Land/Sea Layers", "Detail layers based on coast distance"},
+        {Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR, "Gaussian Blur",
+         "Smooth terrain"},
+        {Fwg::Terrain::HeightmapOperationType::GULLY_EROSION, "Gully Erosion",
+         "Erosion simulation"},
+        {Fwg::Terrain::HeightmapOperationType::NORMALIZE, "Normalize Heights",
+         "Normalize to range"},
+        {Fwg::Terrain::HeightmapOperationType::CLAMP_VALUES, "Clamp Values",
+         "Clamp to min/max"},
+        {Fwg::Terrain::HeightmapOperationType::CRATER_GENERATION,
+         "Crater Generation", "Add impact craters to terrain"},
+        //{Fwg::Terrain::HeightmapOperationType::TERRACE_HEIGHTS,
+        // "Terrace Heights", "Create stepped plateau terrain"},
+        //{Fwg::Terrain::HeightmapOperationType::RIDGE_GENERATION,
+        // "Ridge Generation", "Add mountain ridges and watersheds"},
+        //{Fwg::Terrain::HeightmapOperationType::FAULT_LINE_GENERATION,
+        // "Fault Lines", "Create tectonic fault lines"},
+    };
+
+    for (const auto &t : templates) {
+      if (ImGui::Selectable(t.name)) {
+        Fwg::Terrain::HeightmapOperation newOp;
+        newOp.type = t.type;
+        newOp.name = t.name;
+        newOp.enabled = true;
+
+        // Use setParameter helper with correct types
+        switch (t.type) {
+        case Fwg::Terrain::HeightmapOperationType::APPLY_LAND_LAYERS:
+          Fwg::Terrain::setParameter(newOp, "useWeights", true); // bool
+          break;
+        case Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR:
+          Fwg::Terrain::setParameter(newOp, "radius", 2.0f); // float
+          Fwg::Terrain::setParameter(newOp, "sigma", 1.0f);  // float
+          break;
+        case Fwg::Terrain::HeightmapOperationType::GULLY_EROSION:
+          Fwg::Terrain::setParameter(newOp, "iterations", 1);   // int
+          Fwg::Terrain::setParameter(newOp, "intensity", 0.5f); // float
+          break;
+        case Fwg::Terrain::HeightmapOperationType::NORMALIZE:
+          Fwg::Terrain::setParameter(newOp, "min", 0.0f);   // float
+          Fwg::Terrain::setParameter(newOp, "max", 255.0f); // float
+          break;
+        case Fwg::Terrain::HeightmapOperationType::CLAMP_VALUES:
+          Fwg::Terrain::setParameter(newOp, "min", 0.0f);   // float
+          Fwg::Terrain::setParameter(newOp, "max", 255.0f); // float
+          break;
+        case Fwg::Terrain::HeightmapOperationType::CRATER_GENERATION:
+          Fwg::Terrain::setParameter(newOp, "count", 50);         // int
+          Fwg::Terrain::setParameter(newOp, "minRadius", 5.0f);   // float
+          Fwg::Terrain::setParameter(newOp, "maxRadius", 30.0f);  // float
+          Fwg::Terrain::setParameter(newOp, "depthFactor", 0.5f); // float
+          Fwg::Terrain::setParameter(newOp, "rimFactor", 0.3f);   // float
+          Fwg::Terrain::setParameter(newOp, "seed", 0);           // int
+          break;
+        case Fwg::Terrain::HeightmapOperationType::TERRACE_HEIGHTS:
+          Fwg::Terrain::setParameter(newOp, "steps", 5);          // int
+          Fwg::Terrain::setParameter(newOp, "smoothing", 0.5f);   // float
+          Fwg::Terrain::setParameter(newOp, "respectMask", true); // bool
+          break;
+        case Fwg::Terrain::HeightmapOperationType::RIDGE_GENERATION:
+          Fwg::Terrain::setParameter(newOp, "strength", 20.0f); // float
+          Fwg::Terrain::setParameter(newOp, "frequency", 2.0f); // float
+          Fwg::Terrain::setParameter(newOp, "sharpness", 3.0f); // float
+          Fwg::Terrain::setParameter(newOp, "seed", 0);         // int
+          break;
+        case Fwg::Terrain::HeightmapOperationType::FAULT_LINE_GENERATION:
+          Fwg::Terrain::setParameter(newOp, "count", 5);               // int
+          Fwg::Terrain::setParameter(newOp, "minDisplacement", 10.0f); // float
+          Fwg::Terrain::setParameter(newOp, "maxDisplacement", 40.0f); // float
+          Fwg::Terrain::setParameter(newOp, "transitionWidth", 50.0f); // float
+          Fwg::Terrain::setParameter(newOp, "seed", 0);                // int
+          break;
+        }
+
+        pipeline.operations.push_back(newOp);
+        selectedOperationIndex = pipeline.operations.size() - 1;
+        ImGui::CloseCurrentPopup();
+      }
+
+      if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::Text("%s", t.desc);
+        ImGui::EndTooltip();
+      }
+    }
+
+    ImGui::EndPopup();
+  }
+  // ===== END ADD OPERATION POPUP =====
+
+  if (selectedOperationIndex >= 0 &&
+      selectedOperationIndex < pipeline.operations.size()) {
+    if (ImGui::Button("- Remove Selected", ImVec2(-1, 0))) {
+      pipeline.operations.erase(pipeline.operations.begin() +
+                                selectedOperationIndex);
+      selectedOperationIndex = std::max(0, selectedOperationIndex - 1);
+    }
+  }
+
+  ImGui::EndChild(); // OperationList
+
+  ImGui::SameLine();
+
+  // ===== RIGHT COLUMN: Parameter Editor =====
+  ImGui::BeginChild("ParameterEditor", ImVec2(0, 0), true,
+                    ImGuiWindowFlags_None);
+
+  if (selectedOperationIndex >= 0 &&
+      selectedOperationIndex < pipeline.operations.size()) {
+
+    auto &operation = pipeline.operations[selectedOperationIndex];
+
+    ImGui::Text("Operation: %s", operation.name.c_str());
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Editable name
+    char nameBuf[128];
+    strncpy(nameBuf, operation.name.c_str(), sizeof(nameBuf) - 1);
+    nameBuf[sizeof(nameBuf) - 1] = '\0';
+
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("##opname", nameBuf, sizeof(nameBuf))) {
+      operation.name = nameBuf;
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Type-specific parameters
+    renderOperationParameters(operation);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+  } else {
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                       "Select an operation to edit its parameters");
+  }
+
+  ImGui::EndChild(); // ParameterEditor
+
+  ImGui::EndChild(); // PipelineEditorContainer
+}
+
+// Helper: Render operation-specific parameters
+void LandUI::renderOperationParameters(
+    Fwg::Terrain::HeightmapOperation &operation) {
+  using namespace Fwg::Terrain;
+
+  switch (operation.type) {
+  case HeightmapOperationType::APPLY_LAND_LAYERS: {
+    ImGui::TextWrapped(
+        "Applies land and sea detail layers based on distance weights.");
+
+    // Use helper functions with bool type
+    bool useWeights = getParameter<bool>(operation, "useWeights", true);
+    if (ImGui::Checkbox("Use Distance Weights", &useWeights)) {
+      setParameter(operation, "useWeights", useWeights);
+    }
+    break;
+  }
+
+  case HeightmapOperationType::GAUSSIAN_BLUR: {
+    // Use helper functions with float type
+    float radius = getParameter<float>(operation, "radius", 2.0f);
+    ImGui::Text("Blur Radius");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##radius", &radius, 1.0f, 10.0f, "%.1f")) {
+      setParameter(operation, "radius", radius);
+    }
+
+    float sigma = getParameter<float>(operation, "sigma", 1.0f);
+    ImGui::Text("Sigma (blur strength)");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##sigma", &sigma, 0.1f, 5.0f, "%.2f")) {
+      setParameter(operation, "sigma", sigma);
+    }
+    break;
+  }
+
+  case HeightmapOperationType::GULLY_EROSION: {
+    // Use int type for iterations
+    int iterations = getParameter<int>(operation, "iterations", 1);
+    ImGui::Text("Iterations");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("##iterations", &iterations, 1, 10)) {
+      setParameter(operation, "iterations", iterations);
+    }
+
+    // Use float for intensity
+    float intensity = getParameter<float>(operation, "intensity", 0.5f);
+    ImGui::Text("Intensity");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##intensity", &intensity, 0.0f, 1.0f, "%.2f")) {
+      setParameter(operation, "intensity", intensity);
+    }
+    break;
+  }
+
+  case HeightmapOperationType::NORMALIZE: {
+    // Use float for min/max
+    float minVal = getParameter<float>(operation, "min", 0.0f);
+    ImGui::Text("Min Value");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputFloat("##min", &minVal, 1.0f, 10.0f, "%.1f")) {
+      setParameter(operation, "min", minVal);
+    }
+
+    float maxVal = getParameter<float>(operation, "max", 255.0f);
+    ImGui::Text("Max Value");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputFloat("##max", &maxVal, 1.0f, 10.0f, "%.1f")) {
+      setParameter(operation, "max", maxVal);
+    }
+    break;
+  }
+
+  case HeightmapOperationType::CLAMP_VALUES: {
+    // Use float for min/max
+    float minVal = getParameter<float>(operation, "min", 0.0f);
+    ImGui::Text("Clamp Min");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputFloat("##clampmin", &minVal, 1.0f, 10.0f, "%.1f")) {
+      setParameter(operation, "min", minVal);
+    }
+
+    float maxVal = getParameter<float>(operation, "max", 255.0f);
+    ImGui::Text("Clamp Max");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputFloat("##clampmax", &maxVal, 1.0f, 10.0f, "%.1f")) {
+      setParameter(operation, "max", maxVal);
+    }
+    break;
+  }
+  case Fwg::Terrain::HeightmapOperationType::CRATER_GENERATION: {
+    ImGui::TextWrapped("Adds impact craters of varying sizes to the terrain.");
+
+    int count = Fwg::Terrain::getParameter<int>(operation, "count", 50);
+    ImGui::Text("Crater Count");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("##count", &count, 1, 500)) {
+      Fwg::Terrain::setParameter(operation, "count", count);
+    }
+
+    float minRadius =
+        Fwg::Terrain::getParameter<float>(operation, "minRadius", 5.0f);
+    ImGui::Text("Min Radius (pixels)");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##minRadius", &minRadius, 2.0f, 50.0f, "%.1f")) {
+      Fwg::Terrain::setParameter(operation, "minRadius", minRadius);
+    }
+
+    float maxRadius =
+        Fwg::Terrain::getParameter<float>(operation, "maxRadius", 30.0f);
+    ImGui::Text("Max Radius (pixels)");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##maxRadius", &maxRadius, 5.0f, 100.0f, "%.1f")) {
+      Fwg::Terrain::setParameter(operation, "maxRadius", maxRadius);
+    }
+
+    float depthFactor =
+        Fwg::Terrain::getParameter<float>(operation, "depthFactor", 0.5f);
+    ImGui::Text("Depth Factor");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##depthFactor", &depthFactor, 0.1f, 2.0f, "%.2f")) {
+      Fwg::Terrain::setParameter(operation, "depthFactor", depthFactor);
+    }
+
+    float rimFactor =
+        Fwg::Terrain::getParameter<float>(operation, "rimFactor", 0.3f);
+    ImGui::Text("Rim Height Factor");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##rimFactor", &rimFactor, 0.0f, 1.0f, "%.2f")) {
+      Fwg::Terrain::setParameter(operation, "rimFactor", rimFactor);
+    }
+
+    int seed = Fwg::Terrain::getParameter<int>(operation, "seed", 0);
+    if (ImGui::Button("Randomize Seed")) {
+      seed = RandNum::getRandom<int>();
+      Fwg::Terrain::setParameter(operation, "seed", seed);
+    }
+    ImGui::SameLine();
+    ImGui::Text("Seed: %d", seed);
+
+    break;
+  }
+  case Fwg::Terrain::HeightmapOperationType::TERRACE_HEIGHTS: {
+    ImGui::TextWrapped(
+        "Creates stepped plateau terrain with configurable bands.");
+
+    int steps = getParameter<int>(operation, "steps", 5);
+    ImGui::Text("Terrace Steps");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("##steps", &steps, 2, 20)) {
+      setParameter(operation, "steps", steps);
+    }
+
+    float smoothing = getParameter<float>(operation, "smoothing", 0.5f);
+    ImGui::Text("Smoothing");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##smoothing", &smoothing, 0.0f, 2.0f, "%.2f")) {
+      setParameter(operation, "smoothing", smoothing);
+    }
+
+    bool respectMask = getParameter<bool>(operation, "respectMask", true);
+    if (ImGui::Checkbox("Only Apply to Land", &respectMask)) {
+      setParameter(operation, "respectMask", respectMask);
+    }
+    break;
+  }
+
+  case Fwg::Terrain::HeightmapOperationType::RIDGE_GENERATION: {
+    ImGui::TextWrapped("Adds mountain ridges and watershed lines to terrain.");
+
+    float strength = getParameter<float>(operation, "strength", 20.0f);
+    ImGui::Text("Ridge Strength");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##strength", &strength, 0.0f, 100.0f, "%.1f")) {
+      setParameter(operation, "strength", strength);
+    }
+
+    float frequency = getParameter<float>(operation, "frequency", 2.0f);
+    ImGui::Text("Ridge Frequency");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##frequency", &frequency, 0.5f, 10.0f, "%.2f")) {
+      setParameter(operation, "frequency", frequency);
+    }
+
+    float sharpness = getParameter<float>(operation, "sharpness", 3.0f);
+    ImGui::Text("Ridge Sharpness");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##sharpness", &sharpness, 1.0f, 10.0f, "%.1f")) {
+      setParameter(operation, "sharpness", sharpness);
+    }
+
+    int seed = getParameter<int>(operation, "seed", 0);
+    if (ImGui::Button("Randomize Seed##ridge")) {
+      seed = RandNum::getRandom<int>();
+      setParameter(operation, "seed", seed);
+    }
+    ImGui::SameLine();
+    ImGui::Text("Seed: %d", seed);
+    break;
+  }
+
+  case Fwg::Terrain::HeightmapOperationType::FAULT_LINE_GENERATION: {
+    ImGui::TextWrapped(
+        "Creates tectonic fault lines with height displacement.");
+
+    int count = getParameter<int>(operation, "count", 5);
+    ImGui::Text("Fault Count");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderInt("##faultcount", &count, 1, 30)) {
+      setParameter(operation, "count", count);
+    }
+
+    float minDisp = getParameter<float>(operation, "minDisplacement", 10.0f);
+    ImGui::Text("Min Displacement");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##mindisp", &minDisp, 1.0f, 50.0f, "%.1f")) {
+      setParameter(operation, "minDisplacement", minDisp);
+    }
+
+    float maxDisp = getParameter<float>(operation, "maxDisplacement", 40.0f);
+    ImGui::Text("Max Displacement");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##maxdisp", &maxDisp, 10.0f, 100.0f, "%.1f")) {
+      setParameter(operation, "maxDisplacement", maxDisp);
+    }
+
+    float width = getParameter<float>(operation, "transitionWidth", 50.0f);
+    ImGui::Text("Transition Width");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##transwidth", &width, 10.0f, 200.0f, "%.1f")) {
+      setParameter(operation, "transitionWidth", width);
+    }
+
+    int seed = getParameter<int>(operation, "seed", 0);
+    if (ImGui::Button("Randomize Seed##fault")) {
+      seed = RandNum::getRandom<int>();
+      setParameter(operation, "seed", seed);
+    }
+    ImGui::SameLine();
+    ImGui::Text("Seed: %d", seed);
+    break;
+  }
+
+  default:
+    ImGui::TextWrapped("No parameters available for this operation type.");
+    break;
   }
 }
 

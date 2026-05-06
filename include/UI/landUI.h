@@ -21,13 +21,15 @@ class LandUI {
 private:
   std::shared_ptr<UIUtils> uiUtils;
   std::set<Fwg::Gfx::Colour> highlightedInputs;
-
   void RenderScrollableLandInput(
       std::vector<Fwg::Gfx::Colour> &imageData,
       const std::vector<Fwg::Terrain::LandformDefinition> &landformDefinitions);
   bool analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                       const Fwg::Gfx::Image &landInput,
                       int &amountClassificationsNeeded);
+  int selectedOperationIndex;
+  void renderOperationParameters(Fwg::Terrain::HeightmapOperation &operation);
+  void renderAddOperationPopup(Fwg::Terrain::HeightmapPipeline &pipeline);
 
 public:
   LandUI();
@@ -45,5 +47,6 @@ public:
   void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void configureLandElevationFactors(Fwg::Cfg &cfg,
                                      Fwg::FastWorldGenerator &fwg);
+  void configurePipelineEditor(Fwg::Cfg &cfg);
 };
 } // namespace Fwg
