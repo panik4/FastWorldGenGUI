@@ -239,8 +239,8 @@ void UIUtils::setupImGuiBackends(GLFWwindow *window) {
   // GLFW backend
   ImGui_ImplGlfw_InitForOpenGL(window, true);
 
-  // OpenGL3 backend (GLSL 330 core is the safest cross-platform default)
-  ImGui_ImplOpenGL3_Init("#version 330 core");
+  // OpenGL3 backend (GLSL 130 core is the safest cross-platform default)
+  ImGui_ImplOpenGL3_Init("#version 130 core");
 }
 
 void UIUtils::cleanupGLResources() {
@@ -509,4 +509,68 @@ void UIUtils::showAdvancedTextBox() {
     ImGui::PopStyleColor(2); // WindowBg + Border
     ImGui::PopStyleVar();    // Border size
   }
+}
+
+void UIUtils::registerTabImages(const std::string &tabName,
+                                const std::vector<ImageOption> &options) {
+  tabImageRegistry[tabName] = options;
+  if (!tabImageSelection.count(tabName)) {
+    tabImageSelection[tabName] = 0; // Default to first
+  }
+}
+
+int UIUtils::getCurrentImageIndex(const std::string &tabName) const {
+  auto it = tabImageSelection.find(tabName);
+  return (it != tabImageSelection.end()) ? it->second : 0;
+}
+
+void UIUtils::switchTabImage(const std::string &tabName, int index) {
+  auto it = tabImageRegistry.find(tabName);
+  if (it == tabImageRegistry.end() || index < 0 || index >= it->second.size()) {
+    return;
+  }
+
+  tabImageSelection[tabName] = index;
+
+  // Load image if not yet loaded
+  auto &option = it->second[index];
+  if (!option.isLoaded && option.generator) {
+    option.image = option.generator();
+    option.isLoaded = true;
+  }
+
+  // Update primary texture
+  updateImage(0, option.image);
+}
+
+bool UIUtils::renderImageSelector(const std::string &tabName) {
+  auto it = tabImageRegistry.find(tabName);
+  if (it == tabImageRegistry.end() || it->second.size() <= 1) {
+    return false; // No options or only one option
+  }
+
+  int currentIndex = getCurrentImageIndex(tabName);
+  const auto &options = it->second;
+
+  ImGui::Text("View:");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(250.0f);
+
+  bool changed = false;
+  if (ImGui::BeginCombo("##ImageSelector",
+                        options[currentIndex].name.c_str())) {
+    for (int i = 0; i < options.size(); ++i) {
+      bool isSelected = (i == currentIndex);
+      if (ImGui::Selectable(options[i].name.c_str(), isSelected)) {
+        switchTabImage(tabName, i);
+        changed = true;
+      }
+      if (isSelected) {
+        ImGui::SetItemDefaultFocus();
+      }
+    }
+    ImGui::EndCombo();
+  }
+
+  return changed;
 }

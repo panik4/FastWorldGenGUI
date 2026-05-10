@@ -1,8 +1,8 @@
 #pragma once
 #include "glad/glad.h"
 #define GLFW_INCLUDE_NONE
-#include "GLFW/glfw3.h"
 #include "FastWorldGenerator.h"
+#include "GLFW/glfw3.h"
 #include "UI/UiElements.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -16,15 +16,6 @@ struct ClickEvent {
 };
 
 class UIUtils {
-private:
-  bool forceUpdate = false;
-  bool processClickEvents = false;
-  bool drawMode = false;
-  int brushSize = 1;
-  float brushStrength = 1.0f;
-  float brushHardness = 1.0f;
-  std::vector<int> clickOffsets;
-  // std::vector<double> clickStrengths;
 
 public:
   std::map<std::string, std::string> helpTexts;
@@ -111,6 +102,42 @@ public:
   void loadHelpImagesFromPath(const std::string &filePath);
   void showHelpTextBox(const std::string &key, bool switchKey = true);
   void showAdvancedTextBox();
+
+  // Image registry per tab
+  struct ImageOption {
+    std::string name;
+    Fwg::Gfx::Image image;
+    bool isLoaded = false;                      // Lazy load flag
+    std::function<Fwg::Gfx::Image()> generator; // Optional: generate on demand
+  };
+
+  // Register available images for a tab
+  void registerTabImages(const std::string &tabName,
+                         const std::vector<ImageOption> &options);
+
+  // Get current selection index for a tab
+  int getCurrentImageIndex(const std::string &tabName) const;
+
+  // Switch to a different image in the tab
+  void switchTabImage(const std::string &tabName, int index);
+
+  // UI widget to show image selector
+  bool renderImageSelector(const std::string &tabName);
+
+private:
+  bool forceUpdate = false;
+  bool processClickEvents = false;
+  bool drawMode = false;
+  int brushSize = 1;
+  float brushStrength = 1.0f;
+  float brushHardness = 1.0f;
+  std::vector<int> clickOffsets;
+  // Storage: tabName -> available images
+  std::map<std::string, std::vector<ImageOption>> tabImageRegistry;
+
+  // Storage: tabName -> currently selected index
+  std::map<std::string, int> tabImageSelection;
+  // std::vector<double> clickStrengths;
 };
 
 namespace Fwg::UI::Utils::Masks {

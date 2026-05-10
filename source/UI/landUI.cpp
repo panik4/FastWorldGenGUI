@@ -313,8 +313,15 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
   } else if (ImGui::Button("Analyse Input") || analyse) {
     // always reload the classified map from disk
-    Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "//classifiedLandInput.png");
+    Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "/classifiedLandInput.png",
+                        false);
     analyseLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
+    if (!amountClassificationsNeeded) {
+      fwg.genHeightFromInput(cfg, cfg.mapsPath + "/classifiedLandInput.png",
+                             cfg.landInputMode);
+    }
+    uiUtils->resetTexture();
+
     analyse = false;
   }
 }
@@ -536,6 +543,11 @@ void LandUI::configurePipelineEditor(Fwg::Cfg &cfg) {
     };
 
     static const OpTemplate templates[] = {
+        {Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR_WEIGHTS,
+         "Gaussian Blur of noise weights", "Smooth weights"},
+        {Fwg::Terrain::HeightmapOperationType::APPLY_BASE_ALTITUDE,
+         "Apply Base Altitude",
+         "Modify terrain based on input landform base altitude"},
         {Fwg::Terrain::HeightmapOperationType::APPLY_LAND_LAYERS,
          "Apply Land/Sea Layers", "Detail layers based on coast distance"},
         {Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR, "Gaussian Blur",
@@ -547,14 +559,7 @@ void LandUI::configurePipelineEditor(Fwg::Cfg &cfg) {
         {Fwg::Terrain::HeightmapOperationType::CLAMP_VALUES, "Clamp Values",
          "Clamp to min/max"},
         {Fwg::Terrain::HeightmapOperationType::CRATER_GENERATION,
-         "Crater Generation", "Add impact craters to terrain"},
-        //{Fwg::Terrain::HeightmapOperationType::TERRACE_HEIGHTS,
-        // "Terrace Heights", "Create stepped plateau terrain"},
-        //{Fwg::Terrain::HeightmapOperationType::RIDGE_GENERATION,
-        // "Ridge Generation", "Add mountain ridges and watersheds"},
-        //{Fwg::Terrain::HeightmapOperationType::FAULT_LINE_GENERATION,
-        // "Fault Lines", "Create tectonic fault lines"},
-    };
+         "Crater Generation", "Add impact craters to terrain"}};
 
     for (const auto &t : templates) {
       if (ImGui::Selectable(t.name)) {
@@ -565,6 +570,16 @@ void LandUI::configurePipelineEditor(Fwg::Cfg &cfg) {
 
         // Use setParameter helper with correct types
         switch (t.type) {
+        case Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR_WEIGHTS:
+          Fwg::Terrain::setParameter(newOp, "radius", 2.0f); // float
+          Fwg::Terrain::setParameter(newOp, "sigma", 1.0f);  // float
+          break;
+        case Fwg::Terrain::HeightmapOperationType::APPLY_BASE_ALTITUDE:
+          Fwg::Terrain::setParameter(newOp, "baseAltitudeEffects",
+                                     0.5f); // float
+          Fwg::Terrain::setParameter(newOp, "blurFactor",
+                                     1.0f); // float
+          break;
         case Fwg::Terrain::HeightmapOperationType::APPLY_LAND_LAYERS:
           Fwg::Terrain::setParameter(newOp, "useWeights", true); // bool
           break;
@@ -602,13 +617,6 @@ void LandUI::configurePipelineEditor(Fwg::Cfg &cfg) {
           Fwg::Terrain::setParameter(newOp, "frequency", 2.0f); // float
           Fwg::Terrain::setParameter(newOp, "sharpness", 3.0f); // float
           Fwg::Terrain::setParameter(newOp, "seed", 0);         // int
-          break;
-        case Fwg::Terrain::HeightmapOperationType::FAULT_LINE_GENERATION:
-          Fwg::Terrain::setParameter(newOp, "count", 5);               // int
-          Fwg::Terrain::setParameter(newOp, "minDisplacement", 10.0f); // float
-          Fwg::Terrain::setParameter(newOp, "maxDisplacement", 40.0f); // float
-          Fwg::Terrain::setParameter(newOp, "transitionWidth", 50.0f); // float
-          Fwg::Terrain::setParameter(newOp, "seed", 0);                // int
           break;
         }
 
@@ -691,6 +699,27 @@ void LandUI::renderOperationParameters(
   using namespace Fwg::Terrain;
 
   switch (operation.type) {
+  case HeightmapOperationType::APPLY_BASE_ALTITUDE: {
+    ImGui::TextWrapped(
+        "Modifies terrain based on input landform base altitude. Higher values "
+        "exaggerate differences.");
+    // Use helper functions with float type
+    float baseAltitudeEffects =
+        getParameter<float>(operation, "baseAltitudeEffects", 0.5f);
+    ImGui::Text("Base Altitude Effect Strength");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##baseAltitudeEffects", &baseAltitudeEffects, 0.0f,
+                           2.0f, "%.2f")) {
+      setParameter(operation, "baseAltitudeEffects", baseAltitudeEffects);
+    }
+    float blurFactor = getParameter<float>(operation, "blurFactor", 1.0f);
+    ImGui::Text("Blur Factor");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##blurFactor", &blurFactor, 0.0f, 5.0f, "%.1f")) {
+      setParameter(operation, "blurFactor", blurFactor);
+    }
+    break;
+  }
   case HeightmapOperationType::APPLY_LAND_LAYERS: {
     ImGui::TextWrapped(
         "Applies land and sea detail layers based on distance weights.");
@@ -702,7 +731,23 @@ void LandUI::renderOperationParameters(
     }
     break;
   }
+  case HeightmapOperationType::GAUSSIAN_BLUR_WEIGHTS: {
+    // Use helper functions with float type
+    float radius = getParameter<float>(operation, "radius", 2.0f);
+    ImGui::Text("Blur Radius");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##radius", &radius, 1.0f, 10.0f, "%.1f")) {
+      setParameter(operation, "radius", radius);
+    }
 
+    float sigma = getParameter<float>(operation, "sigma", 1.0f);
+    ImGui::Text("Sigma (blur strength)");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##sigma", &sigma, 0.1f, 5.0f, "%.2f")) {
+      setParameter(operation, "sigma", sigma);
+    }
+    break;
+  }
   case HeightmapOperationType::GAUSSIAN_BLUR: {
     // Use helper functions with float type
     float radius = getParameter<float>(operation, "radius", 2.0f);
@@ -878,48 +923,6 @@ void LandUI::renderOperationParameters(
 
     int seed = getParameter<int>(operation, "seed", 0);
     if (ImGui::Button("Randomize Seed##ridge")) {
-      seed = RandNum::getRandom<int>();
-      setParameter(operation, "seed", seed);
-    }
-    ImGui::SameLine();
-    ImGui::Text("Seed: %d", seed);
-    break;
-  }
-
-  case Fwg::Terrain::HeightmapOperationType::FAULT_LINE_GENERATION: {
-    ImGui::TextWrapped(
-        "Creates tectonic fault lines with height displacement.");
-
-    int count = getParameter<int>(operation, "count", 5);
-    ImGui::Text("Fault Count");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderInt("##faultcount", &count, 1, 30)) {
-      setParameter(operation, "count", count);
-    }
-
-    float minDisp = getParameter<float>(operation, "minDisplacement", 10.0f);
-    ImGui::Text("Min Displacement");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##mindisp", &minDisp, 1.0f, 50.0f, "%.1f")) {
-      setParameter(operation, "minDisplacement", minDisp);
-    }
-
-    float maxDisp = getParameter<float>(operation, "maxDisplacement", 40.0f);
-    ImGui::Text("Max Displacement");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##maxdisp", &maxDisp, 10.0f, 100.0f, "%.1f")) {
-      setParameter(operation, "maxDisplacement", maxDisp);
-    }
-
-    float width = getParameter<float>(operation, "transitionWidth", 50.0f);
-    ImGui::Text("Transition Width");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##transwidth", &width, 10.0f, 200.0f, "%.1f")) {
-      setParameter(operation, "transitionWidth", width);
-    }
-
-    int seed = getParameter<int>(operation, "seed", 0);
-    if (ImGui::Button("Randomize Seed##fault")) {
       seed = RandNum::getRandom<int>();
       setParameter(operation, "seed", seed);
     }

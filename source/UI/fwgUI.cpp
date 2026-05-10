@@ -47,7 +47,7 @@ void FwgUI::initializeImGui() {
   ImGui::StyleColorsDark();
 
   ImGui_ImplGlfw_InitForOpenGL(window, true);
-  ImGui_ImplOpenGL3_Init("#version 450");
+  ImGui_ImplOpenGL3_Init("#version 130");
 }
 
 void FwgUI::genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
@@ -242,7 +242,7 @@ int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
 
   uiUtils->setupImGuiContextAndStyle();
   ImGui_ImplGlfw_InitForOpenGL(window, true);
-  ImGui_ImplOpenGL3_Init("#version 450");
+  ImGui_ImplOpenGL3_Init("#version 130");
 
   glfwSetWindowUserPointer(window, this);
   glfwSetDropCallback(
@@ -484,6 +484,10 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (uiUtils->tabSwitchEvent(true)) {
       uiUtils->updateImage(0, landUI.landInput);
       uiUtils->updateImage(1, Fwg::Gfx::Image());
+      if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+        uiUtils->updateImage(
+            1, Fwg::Gfx::Land::displayLayerWeights(fwg.terrainData));
+      }
     }
     uiUtils->showHelpTextBox("Land");
     //  Selection of land input mode
@@ -494,21 +498,27 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTMAP;
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "default.json");
+      cfg.terrainConfig.heightmapPipeline =
+          Fwg::Terrain::createDefaultPipeline();
     }
-    ImGui::RadioButton("Heightmap Sketch. A rough outline of a heightmap",
-                       cfg.landInputMode ==
-                           Fwg::Terrain::InputMode::HEIGHTSKETCH);
-    if (ImGui::IsItemClicked()) {
-      cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTSKETCH;
-      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
-                              "mappedInput.json");
-    }
+    //ImGui::RadioButton("Heightmap Sketch. A rough outline of a heightmap",
+    //                   cfg.landInputMode ==
+    //                       Fwg::Terrain::InputMode::HEIGHTSKETCH);
+    //if (ImGui::IsItemClicked()) {
+    //  cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTSKETCH;
+    //  cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
+    //                          "mappedInput.json");
+    //  cfg.terrainConfig.heightmapPipeline =
+    //      Fwg::Terrain::createDefaultPipeline();
+    //}
     ImGui::RadioButton("Land Mask. A simple land/water mask",
                        cfg.landInputMode == Fwg::Terrain::InputMode::LANDMASK);
     if (ImGui::IsItemClicked()) {
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "default.json");
       cfg.landInputMode = Fwg::Terrain::InputMode::LANDMASK;
+      cfg.terrainConfig.heightmapPipeline =
+          Fwg::Terrain::createDefaultPipeline();
     }
     ImGui::RadioButton(
         "Landform. A detailed input map of various colours, that can be mapped "
@@ -518,6 +528,8 @@ int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       cfg.landInputMode = Fwg::Terrain::InputMode::LANDFORM;
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "mappedInput.json");
+      cfg.terrainConfig.heightmapPipeline =
+          Fwg::Terrain::createLandformPipeline();
     }
     if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM &&
         landUI.landInput.size()) {
@@ -555,8 +567,40 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   static int previousLayerTypeSelection = 0;
 
   if (UI::Elements::BeginSubTabItem("Heightmap")) {
+    // Register available views for this tab (only once)
+    static bool registered = false;
+    if (!registered && fwg.terrainData.detailedHeightMap.size()) {
+      std::vector<UIUtils::ImageOption> options;
+
+      // Option 1: Standard heightmap
+      options.push_back(
+          {"Standard Heightmap",
+           Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap), true,
+           nullptr});
+
+      // Option 2: With landforms overlay
+      options.push_back({"Landforms", {}, false, [&fwg]() {
+                           return Fwg::Gfx::landFormMap(fwg.terrainData);
+                         }});
+
+      // Option 3: Shape layers
+      if (fwg.terrainData.shapeLayers.size() > 0) {
+        options.push_back({"Shape Layer 0", {}, false, [&fwg, &cfg]() {
+                             return Fwg::Gfx::Image(
+                                 cfg.width, cfg.height, 24,
+                                 fwg.terrainData.shapeLayers[0]);
+                           }});
+      }
+
+      uiUtils->registerTabImages("Heightmap", options);
+      registered = true;
+    }
+
     if (uiUtils->tabSwitchEvent()) {
+
       if (fwg.terrainData.detailedHeightMap.size()) {
+        // uiUtils->switchTabImage("Heightmap",
+        //                         uiUtils->getCurrentImageIndex("Heightmap"));
         auto heightmap =
             Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap);
         uiUtils->updateImage(0, heightmap);
@@ -587,6 +631,10 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         uiUtils->updateImage(1, Fwg::Gfx::Image());
       }
     }
+    ImGui::Spacing();
+    uiUtils->renderImageSelector("Heightmap");
+    ImGui::Separator();
+    ImGui::Spacing();
 
     uiUtils->showHelpTextBox("Heightmap");
 
@@ -647,13 +695,12 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       if (cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP) {
         grid.AddSliderFloat("Target Land %", &cfg.landPercentage, 0.0f, 1.0f);
         grid.AddInputInt("Height Adjustments", &cfg.heightAdjustments, 0, 100);
-        grid.AddInputFloat("Coastal Distance", &cfg.layerApplicationFactor,
-                           0.0f, 10.0f);
+
       } else {
         grid.AddText("Land Percentage", "%.2f%%", cfg.landPercentage * 100.0f);
-        grid.NextRow(); // Skip to next row for alignment
       }
-
+      grid.AddInputFloat("Coastal Distance", &cfg.layerApplicationFactor, 0.0f,
+                         10.0f);
       grid.AddInputDouble("Lake Size Factor", &cfg.lakeMaxShare, 0.0, 1.0);
       if (grid.AddInputInt("Max Land Height", &cfg.maxLandHeight,
                            cfg.seaLevel + 1, 255)) {
@@ -889,11 +936,9 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         ImGui::EndChild();
       }
     } // End of CollapsingHeader
-    // In showHeightmapTab(), after the Layer Editor CollapsingHeader
     ImGui::Spacing();
 
-    // Pipeline Editor - called directly, not nested
-    ImGui::SeparatorText("Heightmap Processing Pipeline");
+    // Pipeline Editor
     landUI.configurePipelineEditor(cfg);
 
     ImGui::Spacing();
@@ -905,7 +950,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     // Generation buttons based on input mode
     switch (cfg.landInputMode) {
     case Fwg::Terrain::InputMode::HEIGHTMAP: {
-      if (UI::Elements::Button("Generate Random Worldmap", false,
+      if (UI::Elements::Button("Generate Random Continent Shape", false,
                                ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
@@ -921,7 +966,7 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
       ImGui::SameLine();
 
-      if (UI::Elements::Button("Apply Land/Sea Layers", false,
+      if (UI::Elements::Button("Generate Heightmap Details", false,
                                ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
@@ -999,7 +1044,8 @@ int FwgUI::showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           cfg.reRandomize();
         }
         computationFutureBool = runAsync([&fwg, &cfg, this]() {
-          if (fwg.genHeightFromInput(cfg, cfg.mapsPath + "/classifiedLandInput.png",
+          if (fwg.genHeightFromInput(cfg,
+                                     cfg.mapsPath + "/classifiedLandInput.png",
                                      cfg.landInputMode)) {
             fwg.genLand();
           }
