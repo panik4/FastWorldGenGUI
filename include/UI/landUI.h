@@ -1,5 +1,6 @@
 #pragma once
 #include "FastWorldGenerator.h"
+#include "UI/DrawUtils.h"
 #include "UI/InputUI.h"
 #include "UI/UIUtils.h"
 #include "backends/imgui_impl_dx11.h"
@@ -19,34 +20,29 @@ struct ElevationInput {
 
 class LandUI {
 private:
-  std::shared_ptr<UIUtils> uiUtils;
   std::set<Fwg::Gfx::Colour> highlightedInputs;
+  std::string originalLandInput = "";
   void RenderScrollableLandInput(
       std::vector<Fwg::Gfx::Colour> &imageData,
-      const std::vector<Fwg::Terrain::LandformDefinition> &landformDefinitions);
+      const std::vector<Fwg::Terrain::LandformDefinition> &landformDefinitions,
+      UI::UIContext &uiContext);
   bool analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                       const Fwg::Gfx::Image &landInput,
                       int &amountClassificationsNeeded);
-  int selectedOperationIndex;
-  void renderOperationParameters(Fwg::Terrain::HeightmapOperation &operation);
-  void renderAddOperationPopup(Fwg::Terrain::HeightmapPipeline &pipeline);
 
 public:
   LandUI();
-  LandUI(std::shared_ptr<UIUtils> uiUtils);
   Fwg::Gfx::Image landInput;
   std::string loadedTerrainFile;
   bool classificationNeeded = true;
   void complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                          bool &analyze, int &amountClassificationsNeeded);
+                          bool &analyze, int &amountClassificationsNeeded,
+                          UI::UIContext &uiContext);
   Fwg::Utils::ColourTMap<ElevationInput> landInputColours;
   Fwg::Utils::ColourTMap<Fwg::Terrain::LandformDefinition> allowedLandInputs;
   void triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           const std::string &draggedFile,
                           const Fwg::Terrain::InputMode &inputMode);
   void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  void configureLandElevationFactors(Fwg::Cfg &cfg,
-                                     Fwg::FastWorldGenerator &fwg);
-  void configurePipelineEditor(Fwg::Cfg &cfg);
 };
 } // namespace Fwg

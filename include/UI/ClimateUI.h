@@ -1,30 +1,38 @@
 #pragma once
 #include "FastWorldGenerator.h"
+#include "UI/Prerequisites.h"
+#include "UI/UIContext.h"
+#include "UI/UiElements.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
 #include "imgui.h"
 #include <string>
 #include <vector>
-class ClimateUI {
-  struct ClimateInput {
-    Fwg::Gfx::Colour in;
-    Fwg::Gfx::Colour out;
-    std::string rgbName;
-    Fwg::Climate::ClimateClassDefinition climate;
-    ImVec4 colour;
-    std::vector<int> pixels;
-  };
-  std::set<Fwg::Gfx::Colour> highlightedInputs;
 
-public:
-  bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData);
-  bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                         const Fwg::Gfx::Image &climateInput,
-                         int &amountClassificationsNeeded);
-  bool complexTerrainMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                             bool &analyze, int &amountClassificationsNeeded);
+namespace Fwg::UI::Climate {
 
-  Fwg::Gfx::Image climateInputMap;
-  Fwg::Utils::ColourTMap<ClimateInput> climateInputColours;
-  Fwg::Utils::ColourTMap<Fwg::Climate::ClimateClassDefinition> allowedClimateInputs;
-};
+namespace Input {
+bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData,
+                                  UIContext &uiContext);
+bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                       const Fwg::Gfx::Image &climateInput,
+                       UIContext &uiContext);
+bool complexTerrainMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                           UIContext &uiContext);
+
+} // namespace Input
+
+int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                       UIContext &uiContext);
+int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                    UIContext &uiContext);
+int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                 UIContext &uiContext);
+int showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                   UIContext &uiContext);
+int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                UIContext &uiContext);
+int showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                     UIContext &uiContext);
+
+} // namespace Fwg::UI::Climate
