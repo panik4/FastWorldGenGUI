@@ -1,6 +1,6 @@
 #include "UI/FwgUI.h"
 
-namespace Fwg {
+namespace Fwg::UI {
 
 FwgUI::FwgUI() : landUI() {}
 
@@ -134,7 +134,7 @@ void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   *log << Fwg::Utils::Logging::Logger::logInstance.getFullLog();
   Fwg::Utils::Logging::Logger::logInstance.attachStream(log);
   fwg.configure(cfg);
-  heightmapUI.loadHeightmapConfigs();
+  Fwg::UI::Heightmap::loadHeightmapConfigs(uiContext);
   initAllowedInput(cfg, fwg.climateData, cfg.terrainConfig.landformDefinitions);
 }
 
@@ -297,7 +297,7 @@ void FwgUI::initAllowedInput(
   uiContext.climateUI.allowedClimateInputs.clear();
   for (const auto &climateType : climateClassDefinitions) {
     uiContext.climateUI.allowedClimateInputs.setValue(climateType.primaryColour,
-                                            climateType);
+                                                      climateType);
   }
 
   for (const auto &landformDefinition : landformDefinitions) {
@@ -369,142 +369,11 @@ int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginMainTabItem("Land Tabs")) {
     uiContext.tabSwitchEvent();
     if (UI::Elements::BeginSubTabBar("Land Tabs", 0.0f)) {
-      showLandTab(cfg, fwg);
-      heightmapUI.showHeightmapTab(cfg, fwg, uiContext);
-      showNormalMapTab(cfg, fwg);
+      landUI.showLandInputTab(cfg, fwg, uiContext);
+      Fwg::UI::Heightmap::showHeightmapTab(cfg, fwg, uiContext);
+      Fwg::UI::Heightmap::showNormalMapTab(cfg, fwg, uiContext);
       UI::Elements::EndSubTabBar();
     }
-    ImGui::EndTabItem();
-  }
-  return 0;
-}
-
-int FwgUI::showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (UI::Elements::BeginSubTabItem("Land Input")) {
-    if (uiContext.tabSwitchEvent(true)) {
-      uiContext.imageContext.updateImage(0, landUI.landInput);
-      uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
-      if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
-        uiContext.imageContext.updateImage(
-            1, Fwg::Gfx::Land::displayLayerWeights(fwg.terrainData));
-      }
-    }
-    uiContext.helpContext.showHelpTextBox("Land");
-    //  Selection of land input mode
-    ImGui::TextUnformatted("Land Input Mode");
-    ImGui::RadioButton("Heightmap. A finished heightmap",
-                       cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP);
-    if (ImGui::IsItemClicked()) {
-      cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTMAP;
-      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
-                              "default.json");
-      cfg.terrainConfig.heightmapPipeline =
-          Fwg::Terrain::createDefaultPipeline();
-    }
-    // ImGui::RadioButton("Heightmap Sketch. A rough outline of a heightmap",
-    //                    cfg.landInputMode ==
-    //                        Fwg::Terrain::InputMode::HEIGHTSKETCH);
-    // if (ImGui::IsItemClicked()) {
-    //   cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTSKETCH;
-    //   cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
-    //                           "mappedInput.json");
-    //   cfg.terrainConfig.heightmapPipeline =
-    //       Fwg::Terrain::createDefaultPipeline();
-    // }
-    ImGui::RadioButton("Land Mask. A simple land/water mask",
-                       cfg.landInputMode == Fwg::Terrain::InputMode::LANDMASK);
-    if (ImGui::IsItemClicked()) {
-      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
-                              "default.json");
-      cfg.landInputMode = Fwg::Terrain::InputMode::LANDMASK;
-      cfg.terrainConfig.heightmapPipeline =
-          Fwg::Terrain::createDefaultPipeline();
-    }
-    ImGui::RadioButton(
-        "Landform. A detailed input map of various colours, that can be mapped "
-        "to mountains, lakes, valleys, plains, and more.",
-        cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM);
-    if (ImGui::IsItemClicked()) {
-      cfg.landInputMode = Fwg::Terrain::InputMode::LANDFORM;
-      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
-                              "mappedInput.json");
-      cfg.terrainConfig.heightmapPipeline =
-          Fwg::Terrain::createLandformPipeline();
-    }
-    if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM &&
-        landUI.landInput.size()) {
-      landUI.complexLandMapping(
-          cfg, fwg, uiContext.generationContext.analyze,
-          uiContext.generationContext.amountClassificationsNeeded, uiContext);
-    }
-
-    if (uiContext.triggeredDrag) {
-      cfg.allowHeightmapModification = true;
-      uiContext.asyncContext.computationFutureBool =
-          uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
-            landUI.triggeredLandInput(cfg, fwg, uiContext.draggedFile,
-                                      cfg.landInputMode);
-
-            // in case of complex input and a drag, we NEED to initially analyze
-            if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
-              uiContext.generationContext.analyze = true;
-            }
-            uiContext.triggeredDrag = false;
-            uiContext.imageContext.resetTexture();
-            return true;
-          });
-    }
-    ImGui::EndTabItem();
-  }
-  return 0;
-}
-
-int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (UI::Elements::BeginSubTabItem("Normalmap")) {
-    if (uiContext.tabSwitchEvent()) {
-      uiContext.imageContext.updateImage(
-          0, Fwg::Gfx::displaySobelMap(fwg.terrainData.sobelData));
-      uiContext.imageContext.updateImage(
-          1, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
-    }
-    uiContext.helpContext.showHelpTextBox("Normalmap");
-
-    ImGui::SeparatorText("Normal Map Configuration");
-
-    {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
-      grid.AddInputDouble("Sobel Factor", &cfg.sobelFactor, 0.01, 10.0);
-    }
-
-    ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData)});
-
-    if (guard.ready()) {
-      if (UI::Elements::ImportantStepButton("Generate Normalmap",
-                                            ImVec2(200, 0))) {
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
-              fwg.genSobelMap(cfg);
-              uiContext.imageContext.resetTexture(0);
-              return true;
-            });
-      }
-    }
-
-    if (uiContext.triggeredDrag) {
-      uiContext.triggeredDrag = false;
-      auto heightMap =
-          IO::Reader::readHeightmapImage(uiContext.draggedFile, cfg);
-      fwg.loadHeight(cfg, heightMap);
-      uiContext.asyncContext.computationFutureBool =
-          uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
-            fwg.genSobelMap(cfg);
-            uiContext.imageContext.resetTexture();
-            return true;
-          });
-    }
-
     ImGui::EndTabItem();
   }
   return 0;
@@ -513,10 +382,9 @@ int FwgUI::showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
   if (UI::Elements::BeginMainTabItem("Climate Input")) {
-    static bool analyze = false;
-    static int amountClassificationsNeeded = 0;
     if (uiContext.tabSwitchEvent()) {
-      uiContext.imageContext.updateImage(0, uiContext.climateUI.climateInputMap);
+      uiContext.imageContext.updateImage(0,
+                                         uiContext.climateUI.climateInputMap);
       uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
     }
     ImGui::SeparatorText("This step is OPTIONAL! You can also generate a "
@@ -554,21 +422,21 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
               if (uiContext.climateUI.climateInputMap.size() !=
                   fwg.terrainData.detailedHeightMap.size()) {
-                Utils::Logging::logLine(
+                Fwg::Utils::Logging::logLine(
                     "Climate input map size does not match height "
                     "map size. Please ensure that the input map is "
                     "the same size as the height map");
                 uiContext.climateUI.climateInputMap.clear();
               } else {
-                analyze = true;
+                uiContext.climateUI.analyze = true;
               }
               uiContext.imageContext.resetTexture();
               return true;
             });
       }
       if (uiContext.climateUI.climateInputMap.initialised()) {
-        if (Fwg::UI::Climate::Input::complexTerrainMapping(
-                cfg, fwg, uiContext)) {
+        if (Fwg::UI::Climate::Input::complexTerrainMapping(cfg, fwg,
+                                                           uiContext)) {
           uiContext.imageContext.resetTexture();
         }
       }
@@ -577,10 +445,13 @@ int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     // Classification guard
     auto classificationGuard =
         UI::PrerequisiteChecker::requireSilent({UI::Prerequisite{
-            "Classification", "Complete climate classification",
-            [&]() { return amountClassificationsNeeded <= 0 && !analyze; }}});
+            "Classification", "Complete climate classification", [&]() {
+              return uiContext.climateUI.amountClassificationsNeeded <= 0 &&
+                     !uiContext.climateUI.analyze;
+            }}});
 
-    if (classificationGuard.ready() && uiContext.climateUI.climateInputMap.size() &&
+    if (classificationGuard.ready() &&
+        uiContext.climateUI.climateInputMap.size() &&
         ImGui::Button("Generate from labeled climate")) {
       uiContext.asyncContext.computationFutureBool =
           uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
@@ -722,4 +593,4 @@ int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-} // namespace Fwg
+} // namespace Fwg::UI

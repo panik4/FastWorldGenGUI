@@ -2,21 +2,19 @@
 #include "FastWorldGenerator.h"
 #include "UI/Prerequisites.h"
 #include "UI/UIContext.h"
-#include "UI/UiElements.h"
+#include "UI/UIElements.h"
 
-namespace Fwg::UI {
-class HeightmapUI {
-private:
-  int selectedOperationIndex;
-  std::vector<std::string> heightmapConfigFiles;
-  void renderOperationParameters(Fwg::Terrain::HeightmapOperation &operation);
-  void configureLandElevationFactors(Fwg::Cfg &cfg,
-                                     Fwg::FastWorldGenerator &fwg);
-  void configurePipelineEditor(Fwg::Cfg &cfg);
+namespace Fwg::UI::Heightmap {
+namespace Detail {
+void renderOperationParameters(Fwg::Terrain::HeightmapOperation &operation);
+void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext);
+} // namespace Detail
 
-public:
-  void loadHeightmapConfigs();
-  int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                       UIContext &uiContext);
-};
-} // namespace Fwg::UI
+void configureLandElevationFactors(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+void loadHeightmapConfigs(UIContext &uiContext);
+int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                     UIContext &uiContext);
+int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                     UIContext &uiContext);
+
+} // namespace Fwg::UI::Heightmap

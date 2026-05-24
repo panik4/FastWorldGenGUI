@@ -83,7 +83,7 @@ int main() {
   Fwg::Utils::Logging::logLine("Initialising Fwg");
   Fwg::FastWorldGenerator fwg;
   Fwg::Utils::Logging::logLine("Initialising Fwg UI");
-  Fwg::FwgUI ui;
+  Fwg::UI::FwgUI ui;
   Fwg::Utils::Logging::logLine("Calling Fwg UI.shiny");
   ui.shiny(fwg);
 }

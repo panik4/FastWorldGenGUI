@@ -1,7 +1,88 @@
 #include "UI/LandUI.h"
 
-namespace Fwg {
+namespace Fwg::UI {
 LandUI::LandUI() {}
+
+int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                             UIContext &uiContext) {
+  if (UI::Elements::BeginSubTabItem("Land Input")) {
+    if (uiContext.tabSwitchEvent(true)) {
+      uiContext.imageContext.updateImage(0, landInput);
+      uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
+      if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+        uiContext.imageContext.updateImage(
+            1, Fwg::Gfx::Land::displayLayerWeights(fwg.terrainData));
+      }
+    }
+    uiContext.helpContext.showHelpTextBox("Land");
+    //  Selection of land input mode
+    ImGui::TextUnformatted("Land Input Mode");
+    ImGui::RadioButton("Heightmap. A finished heightmap",
+                       cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP);
+    if (ImGui::IsItemClicked()) {
+      cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTMAP;
+      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
+                              "default.json");
+      cfg.terrainConfig.heightmapPipeline =
+          Fwg::Terrain::createDefaultPipeline();
+    }
+    // ImGui::RadioButton("Heightmap Sketch. A rough outline of a heightmap",
+    //                    cfg.landInputMode ==
+    //                        Fwg::Terrain::InputMode::HEIGHTSKETCH);
+    // if (ImGui::IsItemClicked()) {
+    //   cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTSKETCH;
+    //   cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
+    //                           "mappedInput.json");
+    //   cfg.terrainConfig.heightmapPipeline =
+    //       Fwg::Terrain::createDefaultPipeline();
+    // }
+    ImGui::RadioButton("Land Mask. A simple land/water mask",
+                       cfg.landInputMode == Fwg::Terrain::InputMode::LANDMASK);
+    if (ImGui::IsItemClicked()) {
+      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
+                              "default.json");
+      cfg.landInputMode = Fwg::Terrain::InputMode::LANDMASK;
+      cfg.terrainConfig.heightmapPipeline =
+          Fwg::Terrain::createDefaultPipeline();
+    }
+    ImGui::RadioButton(
+        "Landform. A detailed input map of various colours, that can be mapped "
+        "to mountains, lakes, valleys, plains, and more.",
+        cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM);
+    if (ImGui::IsItemClicked()) {
+      cfg.landInputMode = Fwg::Terrain::InputMode::LANDFORM;
+      cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
+                              "mappedInput.json");
+      cfg.terrainConfig.heightmapPipeline =
+          Fwg::Terrain::createLandformPipeline();
+    }
+    if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM &&
+        landInput.size()) {
+      complexLandMapping(
+          cfg, fwg, uiContext.generationContext.analyze,
+          uiContext.generationContext.amountClassificationsNeeded, uiContext);
+    }
+
+    if (uiContext.triggeredDrag) {
+      cfg.allowHeightmapModification = true;
+      uiContext.asyncContext.computationFutureBool =
+          uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext, this]() {
+            triggeredLandInput(cfg, fwg, uiContext.draggedFile,
+                               cfg.landInputMode);
+
+            // in case of complex input and a drag, we NEED to initially analyze
+            if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+              uiContext.generationContext.analyze = true;
+            }
+            uiContext.triggeredDrag = false;
+            uiContext.imageContext.resetTexture();
+            return true;
+          });
+    }
+    ImGui::EndTabItem();
+  }
+  return 0;
+}
 
 void LandUI::RenderScrollableLandInput(
     std::vector<Fwg::Gfx::Colour> &imageData,
@@ -405,6 +486,4 @@ void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 }
 
-
-
-} // namespace Fwg
+} // namespace Fwg::UI

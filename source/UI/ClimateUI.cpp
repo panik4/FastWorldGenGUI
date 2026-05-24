@@ -320,7 +320,9 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.loadTemperatures(cfg, uiContext.draggedFile, applyAltitudeEffect);
+        fwg.loadTemperatures(
+            cfg, Fwg::IO::Reader::readGenericImage(uiContext.draggedFile, cfg),
+            applyAltitudeEffect);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
       }
@@ -561,7 +563,8 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.loadForests(cfg, uiContext.draggedFile);
+        fwg.loadForests(
+            cfg, Fwg::IO::Reader::readGenericImage(uiContext.draggedFile, cfg));
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
       }

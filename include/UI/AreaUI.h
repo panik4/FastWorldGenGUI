@@ -2,7 +2,7 @@
 #include "FastWorldGenerator.h"
 #include "UI/Prerequisites.h"
 #include "UI/UIContext.h"
-#include "UI/UiElements.h"
+#include "UI/UIElements.h"
 
 namespace Fwg::UI::Areas {
 

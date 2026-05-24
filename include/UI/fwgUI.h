@@ -1,13 +1,13 @@
 #pragma once
-#include "ClimateUI.h"
 #include "FastWorldGenerator.h"
-#include "HeightmapUI.h"
-#include "LandUI.h"
 #include "UI/AreaUI.h"
+#include "UI/ClimateUI.h"
 #include "UI/DrawUtils.h"
+#include "UI/HeightmapUI.h"
+#include "UI/LandUI.h"
 #include "UI/PreRequisites.h"
 #include "UI/UIContext.h"
-#include "UI/UiElements.h"
+#include "UI/UIElements.h"
 #include <atomic>
 #include <functional>
 #include <future>
@@ -16,7 +16,7 @@
 #include <variant>
 #include <vector>
 
-namespace Fwg {
+namespace Fwg::UI {
 
 class FwgUI {
 
@@ -24,8 +24,7 @@ protected:
   GLFWwindow *window = nullptr;
   std::shared_ptr<std::stringstream> log;
   Fwg::UI::UIContext uiContext;
-  Fwg::UI::HeightmapUI heightmapUI;
-  LandUI landUI;
+  Fwg::UI::LandUI landUI;
 
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiContext.imageContext.activeImages[0].size() &&
@@ -44,9 +43,7 @@ protected:
   virtual int showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showFwgConfigure(Fwg::Cfg &cfg);
-  int showLandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 
-  int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 
@@ -64,4 +61,4 @@ public:
   FwgUI();
   int shiny(Fwg::FastWorldGenerator &fwg);
 };
-} // namespace Fwg
+} // namespace Fwg::UI

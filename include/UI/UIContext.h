@@ -4,7 +4,7 @@
 #include "FastWorldGenerator.h"
 #include "GLFW/glfw3.h"
 #include "UI/UIUtils.h"
-#include "UI/UiElements.h"
+#include "UI/UIElements.h"
 #include "utils/Cfg.h"
 #include <map>
 
@@ -334,6 +334,8 @@ struct LayoutContext {
 };
 
 struct GenerationContext {
+  int selectedOperationIndex = 0;
+  std::vector<std::string> heightmapConfigFiles;
   bool analyze = false;
   int amountClassificationsNeeded = 0;
   bool redoHumidity = false;
@@ -347,8 +349,8 @@ struct ClimateInput {
   ImVec4 colour;
   std::vector<int> pixels;
 };
-struct ClimateUiContext {
 
+struct ClimateContext {
   bool analyze = false;
   int amountClassificationsNeeded = 0;
   std::set<Fwg::Gfx::Colour> highlightedInputs;
@@ -365,7 +367,7 @@ struct UIContext {
   AsyncContext asyncContext;
   LayoutContext layoutContext;
   GenerationContext generationContext;
-  ClimateUiContext climateUI;
+  ClimateContext climateUI;
 
   std::string draggedFile = "";
   bool triggeredDrag = false;

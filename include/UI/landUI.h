@@ -1,14 +1,13 @@
 #pragma once
 #include "FastWorldGenerator.h"
 #include "UI/DrawUtils.h"
-#include "UI/InputUI.h"
 #include "UI/UIUtils.h"
 #include "backends/imgui_impl_dx11.h"
 #include "backends/imgui_impl_win32.h"
 #include "imgui.h"
 #include <string>
 #include <vector>
-namespace Fwg {
+namespace Fwg::UI {
 struct ElevationInput {
   Fwg::Gfx::Colour in;
   Fwg::Gfx::Colour out;
@@ -33,8 +32,8 @@ private:
 public:
   LandUI();
   Fwg::Gfx::Image landInput;
-  std::string loadedTerrainFile;
-  bool classificationNeeded = true;
+  int showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                       UIContext &uiContext);
   void complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           bool &analyze, int &amountClassificationsNeeded,
                           UI::UIContext &uiContext);
@@ -45,4 +44,4 @@ public:
                           const Fwg::Terrain::InputMode &inputMode);
   void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 };
-} // namespace Fwg
+} // namespace Fwg::UI
