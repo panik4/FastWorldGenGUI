@@ -44,13 +44,13 @@ void renderOperationParameters(Fwg::Terrain::HeightmapOperation &operation) {
         "Randomizes noise weights to create more natural variation. Higher "
         "values produce more dramatic changes.");
     // Use helper functions with float type
-    float randomisationFactor =
-        getParameter<float>(operation, "randomisationFactor", 0.5f);
+    float randomizationFactor =
+        getParameter<float>(operation, "randomizationFactor", 0.5f);
     ImGui::Text("Randomisation Factor");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##randomisationFactor", &randomisationFactor, 0.0f,
+    if (ImGui::SliderFloat("##randomizationFactor", &randomizationFactor, 0.0f,
                            1.0f, "%.2f")) {
-      setParameter(operation, "randomisationFactor", randomisationFactor);
+      setParameter(operation, "randomizationFactor", randomizationFactor);
     }
     break;
   }
@@ -399,7 +399,7 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
         // Use setParameter helper with correct types
         switch (t.type) {
         case Fwg::Terrain::HeightmapOperationType::RANDOMIZE_WEIGHTS:
-          Fwg::Terrain::setParameter(newOp, "randomisationFactor", 0.5f);
+          Fwg::Terrain::setParameter(newOp, "randomizationFactor", 0.5f);
           break;
         case Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR_WEIGHTS:
           Fwg::Terrain::setParameter(newOp, "radius", 2.0f);

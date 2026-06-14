@@ -140,8 +140,7 @@ void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
 void FwgUI::defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg) {
   showElevationTabs(cfg, fwg);
-  showClimateInputTab(cfg, fwg);
-  showClimateOverview(cfg, fwg);
+  showClimateTabs(cfg, fwg);
   showAreasTab(cfg, fwg);
 }
 
@@ -293,7 +292,7 @@ void FwgUI::initAllowedInput(
     Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
     std::vector<Terrain::LandformDefinition> &landformDefinitions) {
   Fwg::Utils::Logging::logLine("Initialising allowed input");
-  auto &climateClassDefinitions = climateData.climateClassDefinitions;
+  auto &climateClassDefinitions = cfg.climateConfig.climateClassDefinitions;
   uiContext.climateUI.allowedClimateInputs.clear();
   for (const auto &climateType : climateClassDefinitions) {
     uiContext.climateUI.allowedClimateInputs.setValue(climateType.primaryColour,
@@ -379,169 +378,102 @@ int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   return 0;
 }
 
-int FwgUI::showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-
-  if (UI::Elements::BeginMainTabItem("Climate Input")) {
-    if (uiContext.tabSwitchEvent()) {
-      uiContext.imageContext.updateImage(0,
-                                         uiContext.climateUI.climateInputMap);
-      uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
-    }
-    ImGui::SeparatorText("This step is OPTIONAL! You can also generate a "
-                         "random climate in the next tab");
-    uiContext.helpContext.showHelpTextBox("Climate Input");
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::landMask(fwg.terrainData)});
-
-    if (guard.ready()) {
-      if (uiContext.triggeredDrag) {
-        uiContext.triggeredDrag = false;
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
-              // don't immediately generate from the input, instead allow to
-              // manually classify all present colours
-              uiContext.climateUI.climateInputMap =
-                  Fwg::IO::Reader::readGenericImage(uiContext.draggedFile, cfg);
-              // create a map from secondary colours to primary colours
-              Fwg::Utils::ColourTMap<Fwg::Climate::ClimateClassDefinition>
-                  secondaryToPrimary;
-              for (auto &type : fwg.climateData.climateClassDefinitions) {
-                for (auto &secondary : type.secondaryColours) {
-                  secondaryToPrimary.setValue(secondary, type);
-                }
-              }
-
-              // preprocess input to convert to primary colours where possible
-              for (auto &col : uiContext.climateUI.climateInputMap.imageData) {
-                if (secondaryToPrimary.contains(col)) {
-                  col = secondaryToPrimary[col].primaryColour;
-                }
-              }
-
-              if (uiContext.climateUI.climateInputMap.size() !=
-                  fwg.terrainData.detailedHeightMap.size()) {
-                Fwg::Utils::Logging::logLine(
-                    "Climate input map size does not match height "
-                    "map size. Please ensure that the input map is "
-                    "the same size as the height map");
-                uiContext.climateUI.climateInputMap.clear();
-              } else {
-                uiContext.climateUI.analyze = true;
-              }
-              uiContext.imageContext.resetTexture();
-              return true;
-            });
-      }
-      if (uiContext.climateUI.climateInputMap.initialised()) {
-        if (Fwg::UI::Climate::Input::complexTerrainMapping(cfg, fwg,
-                                                           uiContext)) {
-          uiContext.imageContext.resetTexture();
-        }
-      }
-    }
-
-    // Classification guard
-    auto classificationGuard =
-        UI::PrerequisiteChecker::requireSilent({UI::Prerequisite{
-            "Classification", "Complete climate classification", [&]() {
-              return uiContext.climateUI.amountClassificationsNeeded <= 0 &&
-                     !uiContext.climateUI.analyze;
-            }}});
-
-    if (classificationGuard.ready() &&
-        uiContext.climateUI.climateInputMap.size() &&
-        ImGui::Button("Generate from labeled climate")) {
-      uiContext.asyncContext.computationFutureBool =
-          uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
-            cfg.complexClimateInput = true;
-            Fwg::Gfx::Png::save(uiContext.climateUI.climateInputMap,
-                                cfg.mapsPath + "/classifiedClimateInput.png");
-            fwg.loadClimate(cfg, uiContext.climateUI.climateInputMap);
-            uiContext.imageContext.resetTexture();
-            return true;
-          });
-    }
-
-    ImGui::EndTabItem();
-  }
-  return 0;
-}
-
-int FwgUI::showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  if (UI::Elements::BeginMainTabItem("Climate Generation")) {
+int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+  enum class ClimateMode { DEFAULT, INPUT };
+  static ClimateMode climateMode = ClimateMode::DEFAULT;
+  if (UI::Elements::BeginMainTabItem("Climate Tabs")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.resetTexture();
     }
     uiContext.helpContext.showHelpTextBox("Climate");
 
+    // === MODE SELECTOR ===
+    ImGui::SeparatorText("Climate Generation Mode");
+
+    ImGui::RadioButton("Generate Climate Automatically",
+                       reinterpret_cast<int *>(&climateMode),
+                       static_cast<int>(ClimateMode::DEFAULT));
+    ImGui::SameLine();
+    ImGui::RadioButton("Use Climate Input Map",
+                       reinterpret_cast<int *>(&climateMode),
+                       static_cast<int>(ClimateMode::INPUT));
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     ImGui::SeparatorText("Base Climate Parameters");
+    if (climateMode == ClimateMode::DEFAULT) {
+      {
+        UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
 
-    {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+        if (grid.AddInputDouble("Base Temperature", &cfg.baseTemperature,
+                                -100.0, 100.0) |
+            grid.AddInputDouble("Base Humidity", &cfg.baseHumidity, 0.0,
+                                100.0) |
+            grid.AddInputDouble("Fantasy Frequency",
+                                &cfg.fantasyClimateFrequency, 0.0, 10.0)) {
+          uiContext.generationContext.redoHumidity = true;
+        }
 
-      if (grid.AddInputDouble("Base Temperature", &cfg.baseTemperature, -100.0,
-                              100.0) |
-          grid.AddInputDouble("Base Humidity", &cfg.baseHumidity, 0.0, 100.0) |
-          grid.AddInputDouble("Fantasy Frequency", &cfg.fantasyClimateFrequency,
-                              0.0, 10.0)) {
-        uiContext.generationContext.redoHumidity = true;
+        // Fantasy climate checkbox on new row
+        grid.NextRow();
+        ImGui::Checkbox("Fantasy Climate", &cfg.fantasyClimate);
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+          uiContext.generationContext.redoHumidity = true;
+        }
       }
 
-      // Fantasy climate checkbox on new row
-      grid.NextRow();
-      ImGui::Checkbox("Fantasy Climate", &cfg.fantasyClimate);
-      if (ImGui::IsItemDeactivatedAfterEdit()) {
-        uiContext.generationContext.redoHumidity = true;
+      ImGui::Spacing();
+      ImGui::SeparatorText("Latitude & River Settings");
+
+      {
+        UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+
+        if (grid.AddInputDouble("Latitude High", &cfg.latHigh, -90.0, 90.0) |
+            grid.AddInputDouble("Latitude Low", &cfg.latLow, -90.0, 90.0) |
+            grid.AddInputDouble("River Amount", &cfg.riverFactor, 0.0, 10.0) |
+            grid.AddInputDouble("River Humidity", &cfg.riverHumidityFactor, 0.0,
+                                10.0) |
+            grid.AddInputDouble("River Range", &cfg.riverEffectRangeFactor, 0.0,
+                                10.0)) {
+          uiContext.generationContext.redoHumidity = true;
+        }
       }
-    }
 
-    ImGui::Spacing();
-    ImGui::SeparatorText("Latitude & River Settings");
+      ImGui::Spacing();
 
-    {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
-
-      if (grid.AddInputDouble("Latitude High", &cfg.latHigh, -90.0, 90.0) |
-          grid.AddInputDouble("Latitude Low", &cfg.latLow, -90.0, 90.0) |
-          grid.AddInputDouble("River Amount", &cfg.riverFactor, 0.0, 10.0) |
-          grid.AddInputDouble("River Humidity", &cfg.riverHumidityFactor, 0.0,
-                              10.0) |
-          grid.AddInputDouble("River Range", &cfg.riverEffectRangeFactor, 0.0,
-                              10.0)) {
-        uiContext.generationContext.redoHumidity = true;
-      }
-    }
-
-    ImGui::Spacing();
-
-    // Scoped guard - only affects the automation button
-    {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-           UI::PrerequisiteChecker::landforms(fwg.terrainData),
-           UI::PrerequisiteChecker::landMask(fwg.terrainData)});
-      if (guard.ready() && UI::Elements::AutomationStepButton(
-                               "Generate whole climate automatically")) {
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
-              fwg.genTemperatures(cfg);
-              fwg.genHumidity(cfg);
-              fwg.genRivers(cfg);
-              fwg.genClimate(cfg);
-              fwg.genWorldMap(cfg);
-              uiContext.imageContext.resetTexture();
-              return true;
-            });
+      // Scoped guard - only affects the automation button
+      {
+        auto guard = UI::PrerequisiteChecker::require(
+            {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
+             UI::PrerequisiteChecker::landforms(fwg.terrainData),
+             UI::PrerequisiteChecker::landMask(fwg.terrainData)});
+        if (guard.ready() && UI::Elements::AutomationStepButton(
+                                 "Generate whole climate automatically")) {
+          uiContext.asyncContext.computationFutureBool =
+              uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
+                fwg.genTemperatures(cfg);
+                fwg.genHumidity(cfg);
+                fwg.genRivers(cfg);
+                fwg.genClimate(cfg);
+                fwg.genWorldMap(cfg);
+                uiContext.imageContext.resetTexture();
+                return true;
+              });
+        }
       }
     }
 
     if (UI::Elements::BeginSubTabBar("Climate Generation", 0.0f)) {
-      Fwg::UI::Climate::showTemperatureMap(cfg, fwg, uiContext);
-      Fwg::UI::Climate::showHumidityTab(cfg, fwg, uiContext);
+      if (climateMode == ClimateMode::DEFAULT) {
+        Fwg::UI::Climate::showTemperatureMap(cfg, fwg, uiContext);
+        Fwg::UI::Climate::showHumidityTab(cfg, fwg, uiContext);
+      } else {
+        Fwg::UI::Climate::Input::showClimateInputTab(cfg, fwg, uiContext);
+      }
       Fwg::UI::Climate::showRiverTab(cfg, fwg, uiContext);
-      Fwg::UI::Climate::showClimateTab(cfg, fwg, uiContext);
+      Fwg::UI::Climate::showClimateZonesTab(cfg, fwg, uiContext);
       Fwg::UI::Climate::showTreeTab(cfg, fwg, uiContext);
       UI::Elements::EndSubTabBar();
     }

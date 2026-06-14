@@ -335,6 +335,7 @@ struct LayoutContext {
 
 struct GenerationContext {
   int selectedOperationIndex = 0;
+  int selectedClimateOperationIndex = 0;
   std::vector<std::string> heightmapConfigFiles;
   bool analyze = false;
   int amountClassificationsNeeded = 0;

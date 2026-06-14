@@ -11,14 +11,21 @@
 
 namespace Fwg::UI::Climate {
 
+namespace Detail {
+void renderOperationParameters(Fwg::Climate::ClimateOperation &operation);
+void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext);
+} // namespace Detail
+
 namespace Input {
 bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData,
                                   UIContext &uiContext);
 bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                        const Fwg::Gfx::Image &climateInput,
                        UIContext &uiContext);
-bool complexTerrainMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+bool climateMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                            UIContext &uiContext);
+int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                        UIContext &uiContext);
 
 } // namespace Input
 
@@ -28,7 +35,7 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                     UIContext &uiContext);
 int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                  UIContext &uiContext);
-int showClimateTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                    UIContext &uiContext);
 int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                 UIContext &uiContext);

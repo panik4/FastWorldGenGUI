@@ -44,8 +44,7 @@ protected:
   int showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showFwgConfigure(Fwg::Cfg &cfg);
 
-  int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  int showClimateOverview(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+  int showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 
   int showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 
