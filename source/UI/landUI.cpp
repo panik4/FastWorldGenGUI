@@ -68,7 +68,7 @@ int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       uiContext.asyncContext.computationFutureBool =
           uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext, this]() {
             triggeredLandInput(cfg, fwg, uiContext.draggedFile,
-                               cfg.landInputMode);
+                               cfg.landInputMode, uiContext);
 
             // in case of complex input and a drag, we NEED to initially analyze
             if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
@@ -409,7 +409,8 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
 void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                                 const std::string &draggedFile,
-                                const Fwg::Terrain::InputMode &inputMode) {
+                                const Fwg::Terrain::InputMode &inputMode,
+                                UI::UIContext &uiContext) {
   originalLandInput = draggedFile;
   fwg.resetData();
   fwg.configure(cfg);
@@ -449,7 +450,7 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   originalLandInput = cfg.mapsPath + "/classifiedLandInput.png";
 }
 
-void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
+void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg, UI::UIContext &uiContext) {
   static std::vector<Fwg::Gfx::Colour> allowedLandInputColours;
   static std::vector<std::string> allowedLandInputColoursNames;
   static Fwg::Gfx::Colour selectedTypeColour;
@@ -460,7 +461,7 @@ void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       allowedLandInputColoursNames.push_back(elem.second.name);
     }
   }
-  ImGui::PushItemWidth(200.0f);
+  ImGui::PushItemWidth(uiContext.scaled(200.0f));
   if (ImGui::BeginCombo("Colour Selection",
                         allowedLandInputColoursNames[current_item].c_str())) {
     for (int n = 0; n < allowedLandInputColours.size(); n++) {

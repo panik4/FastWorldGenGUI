@@ -156,7 +156,7 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Segment Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
 
       grid.AddInputDouble("Cost Influence", &cfg.segmentCostInfluence, 0.0,
                           10.0);
@@ -187,7 +187,7 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       ImGui::SeparatorText("Segment Statistics");
 
       {
-        UI::Elements::GridLayout grid(3, 150.0f, 12.0f);
+        UI::Elements::GridLayout grid(3, uiContext.scaled(150.0f), uiContext.scaled(12.0f));
         grid.AddText("Land Segments", "%d", (int)fwg.areaData.landSegments);
         grid.AddText("Sea Segments", "%d", (int)fwg.areaData.seaSegments);
         grid.AddText("Lake Segments", "%d", (int)fwg.areaData.lakeSegments);
@@ -264,7 +264,7 @@ int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Province Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
 
       grid.AddInputDouble("Land Factor", &cfg.landProvFactor, 0.0, 10.0);
       grid.AddInputDouble("Sea Factor", &cfg.seaProvFactor, 0.0, 10.0);
@@ -402,7 +402,7 @@ int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Continent Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
       grid.AddInputInt("Max Continents", &cfg.maxAmountOfContinents, 1, 50);
       grid.AddText("Current Continents", "%d",
                    (int)fwg.areaData.continents.size());

@@ -861,7 +861,7 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("River Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
       grid.AddInputDouble("River Multiplier", &cfg.riverFactor, 0.0, 10.0);
       grid.AddText("River Count", "%d", (int)fwg.climateData.rivers.size());
     }
@@ -969,7 +969,7 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Forest Density Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
 
       grid.AddInputDouble("Boreal Density", &cfg.borealDensity, 0.0, 1.0);
       grid.AddInputDouble("Temperate Needle", &cfg.temperateNeedleDensity, 0.0,

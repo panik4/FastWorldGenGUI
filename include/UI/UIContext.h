@@ -331,6 +331,7 @@ struct AsyncContext {
 
 struct LayoutContext {
   float leftColumnWidth = 0.4f;
+  float uiScale = 1.0f;
 };
 
 struct GenerationContext {
@@ -379,6 +380,16 @@ struct UIContext {
       return true;
     }
     return imageContext.updateTexture1 || imageContext.updateTexture2;
+  }
+
+  // Helper functions for scaled UI elements
+  inline float scaled(float value) const {
+    return value * layoutContext.uiScale;
+  }
+
+  inline ImVec2 scaled(const ImVec2& vec) const {
+    return ImVec2(vec.x * layoutContext.uiScale, 
+                  vec.y * layoutContext.uiScale);
   }
 };
 

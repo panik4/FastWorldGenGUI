@@ -124,6 +124,48 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
   }
 }
 
+
+void FwgUI::applyAutoUIScale() {
+  static bool styleBackupCreated = false;
+  static ImGuiStyle styleBackup;
+  static float lastAppliedScale = 1.0f;
+
+  // Create backup of original unscaled style on first call
+  if (!styleBackupCreated) {
+    styleBackup = ImGui::GetStyle();
+    styleBackupCreated = true;
+  }
+
+  // Calculate scale based on window height (1369.0p = 1.0x baseline)
+  ImGuiIO &io = ImGui::GetIO();
+  float targetScale = io.DisplaySize.y / 1369.0f;
+
+  // Dampen downscaling for small screens (prevents UI from becoming too small)
+  // Use power function below 1.0 to reduce scaling aggressiveness
+  if (targetScale < 1.0f) {
+    // Apply dampening: smaller screens scale down less aggressively
+    targetScale = std::pow(targetScale, 0.6f);
+  }
+  // Above 1.0, scale linearly (no dampening for larger screens)
+
+  // Clamp to reasonable range
+  targetScale = std::clamp(targetScale, 0.5f, 3.0f);
+  // Only apply if scale changed (avoid redundant updates)
+  if (std::abs(targetScale - lastAppliedScale) > 0.01f) {
+    uiContext.layoutContext.uiScale = targetScale;
+    ImGuiStyle &style = ImGui::GetStyle();
+
+    // Reset to unscaled style
+    style = styleBackup;
+
+    // Apply new scale
+    style.ScaleAllSizes(targetScale);
+    io.FontGlobalScale = targetScale;
+
+    lastAppliedScale = targetScale;
+  }
+}
+
 void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   this->uiContext.helpContext.loadHelpTextsFromFile(
       Fwg::Cfg::Values().resourcePath);
@@ -213,6 +255,10 @@ int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+
+    // Apply automatic UI scaling based on window resolution
+    applyAutoUIScale();
+
     {
       ImGui::SetNextWindowPos({0, 0});
       ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y});
@@ -310,7 +356,7 @@ int FwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
     // remove the images, and set pretext for them to be auto loaded after
     // switching tabs again
     uiContext.tabSwitchEvent();
-    ImGui::PushItemWidth(200.0f);
+    PushItemWidthScaled(200.0f);
     ImGui::InputInt("Width", &cfg.width);
     ImGui::InputInt("Height", &cfg.height);
     ImGui::PopItemWidth();
@@ -320,7 +366,7 @@ int FwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
 }
 
 int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  ImGui::PushItemWidth(200.0f);
+  PushItemWidthScaled(200.0f);
   if (ImGui::InputInt("<--Seed", &cfg.mapSeed)) {
     cfg.randomSeed = false;
     cfg.reRandomize();
@@ -344,6 +390,15 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   ImGui::SameLine();
   ImGui::InputInt("<--Debug level", &cfg.debugLevel);
+
+  // Show current UI scale in debug mode
+  if (cfg.debugLevel > 5) {
+    ImGui::Text("UI Scale: %.2fx (auto-adjusted for %dx%d)", 
+                uiContext.layoutContext.uiScale,
+                (int)ImGui::GetIO().DisplaySize.x,
+                (int)ImGui::GetIO().DisplaySize.y);
+  }
+
   if (ImGui::Button("Generate all fwg data")) {
     fwg.resetData();
     // reset this because now we randomly generate all data, so heightmap
@@ -405,7 +460,7 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::SeparatorText("Base Climate Parameters");
     if (climateMode == ClimateMode::DEFAULT) {
       {
-        UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+        UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
 
         if (grid.AddInputDouble("Base Temperature", &cfg.baseTemperature,
                                 -100.0, 100.0) |
@@ -428,7 +483,7 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       ImGui::SeparatorText("Latitude & River Settings");
 
       {
-        UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+        UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
 
         if (grid.AddInputDouble("Latitude High", &cfg.latHigh, -90.0, 90.0) |
             grid.AddInputDouble("Latitude Low", &cfg.latLow, -90.0, 90.0) |

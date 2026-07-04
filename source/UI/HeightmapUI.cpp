@@ -648,7 +648,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::Text("Select Preset:");
     ImGui::SameLine();
 
-    ImGui::PushItemWidth(300.0f);
+    ImGui::PushItemWidth(uiContext.scaled(300.0f));
     if (ImGui::BeginCombo(
             "##HeightmapPresets",
             activeConfigIndex >= 0 &&
@@ -680,7 +680,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     // Main parameters grid
     {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
 
       grid.AddText("Sealevel", "%d", cfg.seaLevel);
 
@@ -842,7 +842,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
           // Noise settings grid
           {
-            UI::Elements::GridLayout grid(2, 180.0f, 8.0f);
+            UI::Elements::GridLayout grid(2, uiContext.scaled(180.0f), uiContext.scaled(8.0f));
 
             static const char *NoiseTypeNames[] = {
                 "OpenSimplex2", "OpenSimplex2S", "Cellular",
@@ -863,7 +863,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                            (int)(IM_ARRAYSIZE(FractalTypeNames)) - 1);
 
             // Show combo boxes inline
-            ImGui::PushItemWidth(180.0f);
+            ImGui::PushItemWidth(uiContext.scaled(180.0f));
             ImGui::AlignTextToFramePadding();
             ImGui::Text("%-*s", 25, "Noise Type");
             ImGui::SameLine();
@@ -975,9 +975,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               return true;
             });
       }
-
       if (UI::Elements::ImportantStepButton(
-              "Generate Complete Heightmap from new seed", ImVec2(250, 0))) {
+              "Generate Complete Heightmap from new seed", ImVec2(350, 0))) {
         cfg.randomSeed = true;
         cfg.reRandomize();
         uiContext.asyncContext.computationFutureBool =
@@ -1111,7 +1110,7 @@ int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Normal Map Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
       grid.AddInputDouble("Sobel Factor", &cfg.sobelFactor, 0.01, 10.0);
     }
 

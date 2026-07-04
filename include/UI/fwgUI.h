@@ -52,9 +52,24 @@ protected:
   void genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void logWrapper();
   void imageWrapper(ImGuiIO &io);
+  void applyAutoUIScale();
   void init(Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg);
   void computationRunningCheck();
+
+  // Helper functions for scaled UI elements
+  inline float scaled(float value) const {
+    return value * uiContext.layoutContext.uiScale;
+  }
+
+  inline ImVec2 scaled(const ImVec2& vec) const {
+    return ImVec2(vec.x * uiContext.layoutContext.uiScale, 
+                  vec.y * uiContext.layoutContext.uiScale);
+  }
+
+  inline void PushItemWidthScaled(float width) {
+    ImGui::PushItemWidth(width * uiContext.layoutContext.uiScale);
+  }
 
 public:
   FwgUI();

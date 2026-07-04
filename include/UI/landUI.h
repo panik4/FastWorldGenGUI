@@ -41,7 +41,8 @@ public:
   Fwg::Utils::ColourTMap<Fwg::Terrain::LandformDefinition> allowedLandInputs;
   void triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           const std::string &draggedFile,
-                          const Fwg::Terrain::InputMode &inputMode);
-  void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+                          const Fwg::Terrain::InputMode &inputMode,
+                          UI::UIContext &uiContext);
+  void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg, UI::UIContext &uiContext);
 };
 } // namespace Fwg::UI

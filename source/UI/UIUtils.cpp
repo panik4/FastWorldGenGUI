@@ -67,6 +67,13 @@ ImGuiIO &setupImGuiContextAndStyle() {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
+  // Store default style for UI scaling
+  static bool styleInitialized = false;
+  static ImGuiStyle defaultStyle;
+  if (!styleInitialized) {
+    defaultStyle = ImGui::GetStyle();
+    styleInitialized = true;
+  }
   ImGui::StyleColorsDark();
   return io;
 }
