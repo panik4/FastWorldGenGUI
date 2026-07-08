@@ -8,8 +8,8 @@
 	},
 	"paths":
 	{
-		"mapsPath": "Maps//",
-		"loadMapsPath" : "Maps//"
+		"mapsPath": "Maps/",
+		"loadMapsPath" : "Maps/"
 	},
 	"loadMaps":
 	{

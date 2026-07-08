@@ -339,6 +339,7 @@ struct GenerationContext {
   int selectedClimateOperationIndex = 0;
   std::vector<std::string> heightmapConfigFiles;
   bool analyze = false;
+  bool loadedHeightmap = false;
   int amountClassificationsNeeded = 0;
   bool redoHumidity = false;
   bool modifiedAreas = false;

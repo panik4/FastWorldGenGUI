@@ -57,17 +57,17 @@ void renderOperationParameters(Fwg::Terrain::HeightmapOperation &operation) {
 
   case HeightmapOperationType::GAUSSIAN_BLUR_WEIGHTS: {
     // Use helper functions with float type
-    float radius = getParameter<float>(operation, "radius", 2.0f);
+    float radius = getParameter<float>(operation, "radius", 10.0f);
     ImGui::Text("Blur Radius");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##radius", &radius, 1.0f, 10.0f, "%.1f")) {
+    if (ImGui::SliderFloat("##radius", &radius, 1.0f, 20.0f, "%.1f")) {
       setParameter(operation, "radius", radius);
     }
 
-    float sigma = getParameter<float>(operation, "sigma", 1.0f);
+    float sigma = getParameter<float>(operation, "sigma", 5.0f);
     ImGui::Text("Sigma (blur strength)");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##sigma", &sigma, 0.1f, 5.0f, "%.2f")) {
+    if (ImGui::SliderFloat("##sigma", &sigma, 0.1f, 10.0f, "%.2f")) {
       setParameter(operation, "sigma", sigma);
     }
     break;
@@ -402,8 +402,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
           Fwg::Terrain::setParameter(newOp, "randomizationFactor", 0.5f);
           break;
         case Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR_WEIGHTS:
-          Fwg::Terrain::setParameter(newOp, "radius", 2.0f);
-          Fwg::Terrain::setParameter(newOp, "sigma", 1.0f);
+          Fwg::Terrain::setParameter(newOp, "radius", 10.0f);
+          Fwg::Terrain::setParameter(newOp, "sigma", 5.0f);
           break;
         case Fwg::Terrain::HeightmapOperationType::APPLY_BASE_ALTITUDE:
           Fwg::Terrain::setParameter(newOp, "baseAltitudeEffects", 0.5f);
@@ -413,8 +413,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
           Fwg::Terrain::setParameter(newOp, "useWeights", true);
           break;
         case Fwg::Terrain::HeightmapOperationType::GAUSSIAN_BLUR:
-          Fwg::Terrain::setParameter(newOp, "radius", 2.0f);
-          Fwg::Terrain::setParameter(newOp, "sigma", 1.0f);
+          Fwg::Terrain::setParameter(newOp, "radius", 4.0f);
+          Fwg::Terrain::setParameter(newOp, "sigma", 2.0f);
           break;
         case Fwg::Terrain::HeightmapOperationType::GULLY_EROSION:
           Fwg::Terrain::setParameter(newOp, "iterations", 1);
@@ -680,7 +680,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     // Main parameters grid
     {
-      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
+                                    uiContext.scaled(12.0f));
 
       grid.AddText("Sealevel", "%d", cfg.seaLevel);
 
@@ -842,7 +843,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
           // Noise settings grid
           {
-            UI::Elements::GridLayout grid(2, uiContext.scaled(180.0f), uiContext.scaled(8.0f));
+            UI::Elements::GridLayout grid(2, uiContext.scaled(180.0f),
+                                          uiContext.scaled(8.0f));
 
             static const char *NoiseTypeNames[] = {
                 "OpenSimplex2", "OpenSimplex2S", "Cellular",
@@ -944,12 +946,17 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     // Generation buttons based on input mode
     switch (cfg.landInputMode) {
     case Fwg::Terrain::InputMode::HEIGHTMAP: {
+      if (uiContext.generationContext.loadedHeightmap) {
+        ImGui::Text("Warning: A heightmap was already loaded. Generating a new "
+                    "heightmap will overwrite the existing one.");
+      }
       if (UI::Elements::Button("Generate Random Continent Shape", false,
                                ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
           cfg.reRandomize();
         }
+        uiContext.generationContext.loadedHeightmap = false;
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &uiContext]() {
               fwg.genHeight();
@@ -958,11 +965,14 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               return true;
             });
       }
+      std::string buttonLabel = uiContext.generationContext.loadedHeightmap
+                                    ? "Derive Data from Input Heightmap"
+                                    : "Generate Heightmap Details";
+      if (!uiContext.generationContext.loadedHeightmap) {
+        ImGui::SameLine();
+      }
 
-      ImGui::SameLine();
-
-      if (UI::Elements::Button("Generate Heightmap Details", false,
-                               ImVec2(250, 0))) {
+      if (UI::Elements::Button(buttonLabel.c_str(), false, ImVec2(250, 0))) {
         if (rerandomiseSeed) {
           cfg.randomSeed = true;
           cfg.reRandomize();
@@ -1110,7 +1120,8 @@ int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Normal Map Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
+                                    uiContext.scaled(12.0f));
       grid.AddInputDouble("Sobel Factor", &cfg.sobelFactor, 0.01, 10.0);
     }
 

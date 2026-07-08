@@ -124,7 +124,6 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
   }
 }
 
-
 void FwgUI::applyAutoUIScale() {
   static bool styleBackupCreated = false;
   static ImGuiStyle styleBackup;
@@ -393,7 +392,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
   // Show current UI scale in debug mode
   if (cfg.debugLevel > 5) {
-    ImGui::Text("UI Scale: %.2fx (auto-adjusted for %dx%d)", 
+    ImGui::Text("UI Scale: %.2fx (auto-adjusted for %dx%d)",
                 uiContext.layoutContext.uiScale,
                 (int)ImGui::GetIO().DisplaySize.x,
                 (int)ImGui::GetIO().DisplaySize.y);
@@ -434,7 +433,7 @@ int FwgUI::showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 }
 
 int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  enum class ClimateMode { DEFAULT, INPUT };
+  enum class ClimateMode { DEFAULT, FANTASY, INPUT };
   static ClimateMode climateMode = ClimateMode::DEFAULT;
   if (UI::Elements::BeginMainTabItem("Climate Tabs")) {
     if (uiContext.tabSwitchEvent()) {
@@ -445,36 +444,40 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     // === MODE SELECTOR ===
     ImGui::SeparatorText("Climate Generation Mode");
 
-    ImGui::RadioButton("Generate Climate Automatically",
-                       reinterpret_cast<int *>(&climateMode),
-                       static_cast<int>(ClimateMode::DEFAULT));
+    if (ImGui::RadioButton("Generate Simulated Climate",
+                           reinterpret_cast<int *>(&climateMode),
+                           static_cast<int>(ClimateMode::DEFAULT))) {
+      cfg.fantasyClimate = false;
+      uiContext.generationContext.redoHumidity = true;
+    }
     ImGui::SameLine();
-    ImGui::RadioButton("Use Climate Input Map",
-                       reinterpret_cast<int *>(&climateMode),
-                       static_cast<int>(ClimateMode::INPUT));
+    if (ImGui::RadioButton("Generate Random Climate",
+                           reinterpret_cast<int *>(&climateMode),
+                           static_cast<int>(ClimateMode::FANTASY))) {
+      cfg.fantasyClimate = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Use Climate Input Map",
+                           reinterpret_cast<int *>(&climateMode),
+                           static_cast<int>(ClimateMode::INPUT))) {
+      cfg.fantasyClimate = false;
+      uiContext.generationContext.redoHumidity = true;
+    }
 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
     ImGui::SeparatorText("Base Climate Parameters");
-    if (climateMode == ClimateMode::DEFAULT) {
+    if (climateMode == ClimateMode::DEFAULT ||
+        climateMode == ClimateMode::FANTASY) {
       {
         UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
 
         if (grid.AddInputDouble("Base Temperature", &cfg.baseTemperature,
                                 -100.0, 100.0) |
             grid.AddInputDouble("Base Humidity", &cfg.baseHumidity, 0.0,
-                                100.0) |
-            grid.AddInputDouble("Fantasy Frequency",
-                                &cfg.fantasyClimateFrequency, 0.0, 10.0)) {
-          uiContext.generationContext.redoHumidity = true;
-        }
-
-        // Fantasy climate checkbox on new row
-        grid.NextRow();
-        ImGui::Checkbox("Fantasy Climate", &cfg.fantasyClimate);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
+                                100.0)) {
           uiContext.generationContext.redoHumidity = true;
         }
       }
@@ -520,8 +523,15 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       }
     }
 
+    if (climateMode == ClimateMode::FANTASY) {
+      UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
+      grid.AddInputDouble("Fantasy Frequency", &cfg.fantasyClimateFrequency,
+                          0.0, 10.0);
+    }
+
     if (UI::Elements::BeginSubTabBar("Climate Generation", 0.0f)) {
-      if (climateMode == ClimateMode::DEFAULT) {
+      if (climateMode == ClimateMode::DEFAULT ||
+          climateMode == ClimateMode::FANTASY) {
         Fwg::UI::Climate::showTemperatureMap(cfg, fwg, uiContext);
         Fwg::UI::Climate::showHumidityTab(cfg, fwg, uiContext);
       } else {

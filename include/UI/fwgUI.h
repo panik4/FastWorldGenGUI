@@ -29,7 +29,7 @@ protected:
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiContext.imageContext.activeImages[0].size() &&
         uiContext.imageContext.activeImages[0].size()) {
-      std::string path = cfg.mapsPath + "/";
+      std::string path = cfg.mapsPath;
       path += std::to_string(time(NULL));
       Fwg::Gfx::Png::save(uiContext.imageContext.activeImages[0],
                           path + ".png");

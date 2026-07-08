@@ -11,14 +11,37 @@ void renderOperationParameters(Fwg::Climate::ClimateOperation &operation) {
     ImGui::TextWrapped(
         "Modifies climate based on altitude. Higher values exaggerate "
         "altitude effects on temperature.");
-
-    float altitudeFactor = getParameter<float>(operation, "altitudeFactor", 0.5f);
+    float altitudeFactor =
+        getParameter<float>(operation, "altitudeFactor", 0.5f);
     ImGui::Text("Altitude Factor");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##altitudeFactor", &altitudeFactor, 0.0f,
-                           2.0f, "%.2f")) {
+    if (ImGui::SliderFloat("##altitudeFactor", &altitudeFactor, 0.0f, 2.0f,
+                           "%.2f")) {
       setParameter(operation, "altitudeFactor", altitudeFactor);
     }
+    ImGui::Text("Rain Shadow");
+    bool enableRainShadow =
+        getParameter<bool>(operation, "enableRainShadow", true);
+    if (ImGui::Checkbox("Enable Rain Shadow", &enableRainShadow)) {
+      setParameter(operation, "enableRainShadow", enableRainShadow);
+    }
+    ImGui::Text("Latitude South");
+    float latitudeSouth =
+        getParameter<float>(operation, "latitudeSouth", -80.0f);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##latitudeSouth", &latitudeSouth, -90.0f, 0.0f,
+                           "%.1f")) {
+      setParameter(operation, "latitudeSouth", latitudeSouth);
+    }
+    ImGui::Text("Latitude North");
+    float latitudeNorth =
+        getParameter<float>(operation, "latitudeNorth", 80.0f);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::SliderFloat("##latitudeNorth", &latitudeNorth, 0.0f, 90.0f,
+                           "%.1f")) {
+      setParameter(operation, "latitudeNorth", latitudeNorth);
+    }
+
     break;
   }
 
@@ -30,12 +53,12 @@ void renderOperationParameters(Fwg::Climate::ClimateOperation &operation) {
     float frequency = getParameter<float>(operation, "frequency", 1.0f);
     ImGui::Text("Frequency");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##tempFrequency", &frequency, 0.1f,
-                           5.0f, "%.2f")) {
+    if (ImGui::SliderFloat("##tempFrequency", &frequency, 0.1f, 5.0f, "%.2f")) {
       setParameter(operation, "frequency", frequency);
     }
 
-    float randomizationFactor = getParameter<float>(operation, "randomizationFactor", 1.0f);
+    float randomizationFactor =
+        getParameter<float>(operation, "randomizationFactor", 1.0f);
     ImGui::Text("Randomisation Factor");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::SliderFloat("##tempRandomisation", &randomizationFactor, 0.0f,
@@ -53,12 +76,12 @@ void renderOperationParameters(Fwg::Climate::ClimateOperation &operation) {
     float frequency = getParameter<float>(operation, "frequency", 1.0f);
     ImGui::Text("Frequency");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::SliderFloat("##humFrequency", &frequency, 0.1f,
-                           5.0f, "%.2f")) {
+    if (ImGui::SliderFloat("##humFrequency", &frequency, 0.1f, 5.0f, "%.2f")) {
       setParameter(operation, "frequency", frequency);
     }
 
-    float randomizationFactor = getParameter<float>(operation, "randomizationFactor", 1.0f);
+    float randomizationFactor =
+        getParameter<float>(operation, "randomizationFactor", 1.0f);
     ImGui::Text("Randomisation Factor");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::SliderFloat("##humRandomisation", &randomizationFactor, 0.0f,
@@ -90,8 +113,7 @@ void renderOperationParameters(Fwg::Climate::ClimateOperation &operation) {
   }
 
   case ClimateOperationType::NORMALIZE: {
-    ImGui::TextWrapped(
-        "Normalizes climate values to a specified range.");
+    ImGui::TextWrapped("Normalizes climate values to a specified range.");
 
     float minVal = getParameter<float>(operation, "min", 0.0f);
     ImGui::Text("Min Value");
@@ -135,8 +157,7 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
 
   // Main container - two columns with fixed height
   ImGui::BeginChild("ClimatePipelineEditorContainer",
-                    ImVec2(0, fixedEditorHeight), false,
-                    ImGuiWindowFlags_None);
+                    ImVec2(0, fixedEditorHeight), false, ImGuiWindowFlags_None);
 
   // ===== LEFT COLUMN: Operation List =====
   ImGui::BeginChild("ClimateOperationList",
@@ -166,7 +187,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
     ImGui::SameLine();
 
     // Selectable operation name
-    bool isSelected = (uiContext.generationContext.selectedClimateOperationIndex == i);
+    bool isSelected =
+        (uiContext.generationContext.selectedClimateOperationIndex == i);
     ImVec4 bgColor =
         isSelected ? ImVec4(0.26f, 0.59f, 0.98f, 0.40f) : ImVec4(0, 0, 0, 0);
 
@@ -228,16 +250,16 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
     };
 
     static const OpTemplate templates[] = {
-        {Fwg::Climate::ClimateOperationType::APPLY_ALTITUDE,
-         "Apply Altitude", "Modify climate based on altitude"},
+        {Fwg::Climate::ClimateOperationType::APPLY_ALTITUDE, "Apply Altitude",
+         "Modify climate based on altitude"},
         {Fwg::Climate::ClimateOperationType::RANDOMIZE_TEMPERATURES,
          "Randomize Temperatures", "Add natural temperature variation"},
         {Fwg::Climate::ClimateOperationType::RANDOMIZE_HUMIDITIES,
          "Randomize Humidities", "Add natural humidity variation"},
-        {Fwg::Climate::ClimateOperationType::GAUSSIAN_BLUR,
-         "Gaussian Blur", "Smooth climate data"},
-        {Fwg::Climate::ClimateOperationType::NORMALIZE,
-         "Normalize", "Normalize values to range"}};
+        {Fwg::Climate::ClimateOperationType::GAUSSIAN_BLUR, "Gaussian Blur",
+         "Smooth climate data"},
+        {Fwg::Climate::ClimateOperationType::NORMALIZE, "Normalize",
+         "Normalize values to range"}};
 
     for (const auto &t : templates) {
       if (ImGui::Selectable(t.name)) {
@@ -293,8 +315,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
       pipeline.operations.erase(
           pipeline.operations.begin() +
           uiContext.generationContext.selectedClimateOperationIndex);
-      uiContext.generationContext.selectedClimateOperationIndex =
-          std::max(0, uiContext.generationContext.selectedClimateOperationIndex - 1);
+      uiContext.generationContext.selectedClimateOperationIndex = std::max(
+          0, uiContext.generationContext.selectedClimateOperationIndex - 1);
     }
   }
 
@@ -310,8 +332,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
       uiContext.generationContext.selectedClimateOperationIndex <
           pipeline.operations.size()) {
 
-    auto &operation =
-        pipeline.operations[uiContext.generationContext.selectedClimateOperationIndex];
+    auto &operation = pipeline.operations[uiContext.generationContext
+                                              .selectedClimateOperationIndex];
 
     ImGui::Text("Operation: %s", operation.name.c_str());
     ImGui::Separator();
@@ -353,7 +375,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
 namespace Input {
 bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData,
                                   UIContext &uiContext) {
-  // Use all available space, leaving room for buttons below (Apply all, Analyze, and Value display)
+  // Use all available space, leaving room for buttons below (Apply all,
+  // Analyze, and Value display)
   ImGui::BeginChild("ScrollingRegion",
                     ImVec2(0, -ImGui::GetFrameHeightWithSpacing() * 3.5f),
                     false, ImGuiWindowFlags_HorizontalScrollbar);
@@ -552,7 +575,8 @@ bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         uiContext.climateUI.climateInputColours.setValue(
             colour, ClimateInput{colour, colour, "Unclassified",
                                  uiContext.climateUI.allowedClimateInputs.at(
-                                     cfg.climateConfig.climateColours.at("continentalhot")),
+                                     cfg.climateConfig.climateColours.at(
+                                         "continentalhot")),
                                  inputColourVisualHelp});
         uiContext.climateUI.climateInputColours[colour].pixels.push_back(
             imageIndex);
@@ -693,14 +717,17 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
             });
       }
       if (uiContext.climateUI.climateInputMap.initialised()) {
-        // Calculate available space: reserve space for pipeline editor if it will be shown
-        // The collapsible header takes ~20px, the pipeline editor takes 200px when open
-        // We need to check if we're past the prerequisites to show the editor
+        // Calculate available space: reserve space for pipeline editor if it
+        // will be shown The collapsible header takes ~20px, the pipeline editor
+        // takes 200px when open We need to check if we're past the
+        // prerequisites to show the editor
         const float pipelineHeaderHeight = 25.0f;
         const float pipelineEditorHeight = 200.0f;
 
         // Reserve space for pipeline editor (will be shown below)
-        float availableHeight = ImGui::GetContentRegionAvail().y - pipelineHeaderHeight - pipelineEditorHeight - 50.0f;
+        float availableHeight = ImGui::GetContentRegionAvail().y -
+                                pipelineHeaderHeight - pipelineEditorHeight -
+                                50.0f;
 
         // Ensure minimum height
         if (availableHeight < 100.0f) {
@@ -708,8 +735,7 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         }
 
         // Wrap climate mapping in a child window with calculated height
-        ImGui::BeginChild("ClimateMappingSection",
-                          ImVec2(0, availableHeight), 
+        ImGui::BeginChild("ClimateMappingSection", ImVec2(0, availableHeight),
                           false, ImGuiWindowFlags_None);
         if (Fwg::UI::Climate::Input::climateMapping(cfg, fwg, uiContext)) {
           uiContext.imageContext.resetTexture();
@@ -742,7 +768,6 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           });
     }
 
-
     ImGui::EndTabItem();
   }
   return 0;
@@ -774,10 +799,23 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
          UI::PrerequisiteChecker::landMask(fwg.terrainData)});
 
     if (guard.ready()) {
-      if (UI::Elements::ImportantStepButton("Generate Temperature Map",
-                                            ImVec2(220, 0))) {
+      if (!cfg.fantasyClimate &&
+          UI::Elements::ImportantStepButton("Generate Temperature Map",
+                                            ImVec2(280, 0))) {
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
+              fwg.genTemperatures(cfg);
+              uiContext.imageContext.resetTexture();
+              return true;
+            });
+      }
+      if (cfg.fantasyClimate &&
+          UI::Elements::ImportantStepButton(
+              "Generate Temperature Map (new seed)", ImVec2(280, 0))) {
+        uiContext.asyncContext.computationFutureBool =
+            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
+              cfg.randomSeed = true;
+              cfg.reRandomize();
               fwg.genTemperatures(cfg);
               uiContext.imageContext.resetTexture();
               return true;
@@ -822,12 +860,24 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
          UI::PrerequisiteChecker::landMask(fwg.terrainData)});
 
     if (guard.ready()) {
-      if (UI::Elements::ImportantStepButton("Generate Humidity Map",
-                                            ImVec2(220, 0))) {
+      if (!cfg.fantasyClimate && UI::Elements::ImportantStepButton(
+                                     "Generate Humidity Map", ImVec2(220, 0))) {
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
               fwg.genHumidity(cfg);
               uiContext.imageContext.resetTexture(0);
+              return true;
+            });
+      }
+      if (cfg.fantasyClimate &&
+          UI::Elements::ImportantStepButton("Generate Humidity Map (new seed)",
+                                            ImVec2(280, 0))) {
+        uiContext.asyncContext.computationFutureBool =
+            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
+              cfg.randomSeed = true;
+              cfg.reRandomize();
+              fwg.genHumidity(cfg);
+              uiContext.imageContext.resetTexture();
               return true;
             });
       }
@@ -861,7 +911,8 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("River Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
+                                    uiContext.scaled(12.0f));
       grid.AddInputDouble("River Multiplier", &cfg.riverFactor, 0.0, 10.0);
       grid.AddText("River Count", "%d", (int)fwg.climateData.rivers.size());
     }
@@ -883,6 +934,17 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               return true;
             });
       }
+      if (UI::Elements::ImportantStepButton("Generate River Map (new seed)",
+                                            ImVec2(280, 0))) {
+        uiContext.asyncContext.computationFutureBool =
+            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
+              cfg.randomSeed = true;
+              cfg.reRandomize();
+              fwg.genRivers(cfg);
+              uiContext.imageContext.resetTexture();
+              return true;
+            });
+      }
 
       if (uiContext.triggeredDrag) {
         fwg.loadRivers(
@@ -897,7 +959,7 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   return 0;
 }
 int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                   UIContext &uiContext) {
+                        UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Climate Zones")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.updateImage(
@@ -906,7 +968,7 @@ int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
 
     uiContext.helpContext.showHelpTextBox("Climate Gen");
-    ImGui::SeparatorText("Generate climate map or drop it in");
+    ImGui::SeparatorText("Generate climate map");
 
     auto guard = UI::PrerequisiteChecker::require(
         {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
@@ -916,8 +978,7 @@ int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
          UI::PrerequisiteChecker::temperature(fwg.climateData)});
 
     if (guard.ready()) {
-      if (!cfg.fantasyClimate &&
-          ImGui::Button(
+      if (ImGui::Button(
               "Generate Climate Zones from Temperature and Heightmap Data")) {
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
@@ -934,6 +995,8 @@ int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                  ImGui::Button("Generate completely random fantasy climate")) {
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
+              cfg.randomSeed = true;
+              cfg.reRandomize();
               fwg.genTemperatures(cfg);
               fwg.genHumidity(cfg);
               uiContext.generationContext.redoHumidity = false;
@@ -969,7 +1032,8 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Forest Density Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
+                                    uiContext.scaled(12.0f));
 
       grid.AddInputDouble("Boreal Density", &cfg.borealDensity, 0.0, 1.0);
       grid.AddInputDouble("Temperate Needle", &cfg.temperateNeedleDensity, 0.0,

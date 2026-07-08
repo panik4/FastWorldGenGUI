@@ -412,6 +412,7 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                                 const Fwg::Terrain::InputMode &inputMode,
                                 UI::UIContext &uiContext) {
   originalLandInput = draggedFile;
+  uiContext.generationContext.loadedHeightmap = false;
   fwg.resetData();
   fwg.configure(cfg);
   // don't immediately generate from the input, instead allow to manually
@@ -423,6 +424,8 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     outputPath = cfg.mapsPath + "/heightmapInput.png";
     cfg.allowHeightmapModification = false;
     fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(draggedFile, cfg));
+    fwg.genLand();
+    uiContext.generationContext.loadedHeightmap = true;
     break;
   case Fwg::Terrain::InputMode::HEIGHTSKETCH:
     outputPath = cfg.mapsPath + "/heightSketchInput.png";
@@ -450,7 +453,8 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   originalLandInput = cfg.mapsPath + "/classifiedLandInput.png";
 }
 
-void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg, UI::UIContext &uiContext) {
+void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+                  UI::UIContext &uiContext) {
   static std::vector<Fwg::Gfx::Colour> allowedLandInputColours;
   static std::vector<std::string> allowedLandInputColoursNames;
   static Fwg::Gfx::Colour selectedTypeColour;

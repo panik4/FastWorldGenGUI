@@ -2,7 +2,7 @@
 
 namespace Fwg::UI::Areas {
 
-    void areaInputSelector(Fwg::Cfg &cfg) {
+void areaInputSelector(Fwg::Cfg &cfg) {
   ImGui::TextUnformatted("Area Input Mode");
 
   ImGui::RadioButton("Solid",
@@ -102,7 +102,7 @@ void showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       if (UI::Elements::ImportantStepButton("Generate SuperSegments",
                                             ImVec2(220, 0))) {
         uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg,  &uiContext]() {
+            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
               fwg.genSuperSegments(cfg);
               uiContext.imageContext.resetTexture();
               return true;
@@ -117,12 +117,18 @@ void showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                   Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                       fwg.terrainData.landMask);
               if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
-                fwg.loadSuperSegments(
-                    cfg, Fwg::IO::Reader::readGenericImageWithBorders(
-                             uiContext.draggedFile, cfg, evaluationAreas));
+                auto image = Fwg::IO::Reader::readGenericImageWithBorders(
+                    uiContext.draggedFile, cfg, evaluationAreas);
+                if (image.size() == 0) {
+                  return false;
+                }
+                fwg.loadSuperSegments(cfg, image);
               } else {
                 auto image = Fwg::IO::Reader::readGenericImage(
                     uiContext.draggedFile, cfg);
+                if (image.size() == 0) {
+                  return false;
+                }
                 Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
                     image, evaluationAreas);
                 Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
@@ -156,7 +162,8 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Segment Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
+                                    uiContext.scaled(12.0f));
 
       grid.AddInputDouble("Cost Influence", &cfg.segmentCostInfluence, 0.0,
                           10.0);
@@ -164,13 +171,13 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           0.0, 10.0);
 
       if (grid.AddInputInt("Target Land Regions", &cfg.targetLandRegionAmount,
-                           1, 1000)) {
+                           1, 10000)) {
         cfg.autoLandRegionParams = true;
         cfg.calcAreaParameters();
       }
 
       if (grid.AddInputInt("Target Sea Regions", &cfg.targetSeaRegionAmount, 1,
-                           1000)) {
+                           10000)) {
         cfg.autoSeaRegionParams = true;
         cfg.calcAreaParameters();
       }
@@ -187,7 +194,8 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       ImGui::SeparatorText("Segment Statistics");
 
       {
-        UI::Elements::GridLayout grid(3, uiContext.scaled(150.0f), uiContext.scaled(12.0f));
+        UI::Elements::GridLayout grid(3, uiContext.scaled(150.0f),
+                                      uiContext.scaled(12.0f));
         grid.AddText("Land Segments", "%d", (int)fwg.areaData.landSegments);
         grid.AddText("Sea Segments", "%d", (int)fwg.areaData.seaSegments);
         grid.AddText("Lake Segments", "%d", (int)fwg.areaData.lakeSegments);
@@ -264,7 +272,8 @@ int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Province Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
+                                    uiContext.scaled(12.0f));
 
       grid.AddInputDouble("Land Factor", &cfg.landProvFactor, 0.0, 10.0);
       grid.AddInputDouble("Sea Factor", &cfg.seaProvFactor, 0.0, 10.0);
@@ -387,7 +396,7 @@ int showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 }
 
 int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                            UIContext &uiContext) {
+                     UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Continents")) {
     if (uiContext.tabSwitchEvent() && fwg.areaData.provinces.size() &&
         fwg.areaData.regions.size()) {
@@ -402,7 +411,8 @@ int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::SeparatorText("Continent Configuration");
 
     {
-      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f), uiContext.scaled(12.0f));
+      UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
+                                    uiContext.scaled(12.0f));
       grid.AddInputInt("Max Continents", &cfg.maxAmountOfContinents, 1, 50);
       grid.AddText("Current Continents", "%d",
                    (int)fwg.areaData.continents.size());
