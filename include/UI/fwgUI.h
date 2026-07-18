@@ -25,6 +25,7 @@ protected:
   std::shared_ptr<std::stringstream> log;
   Fwg::UI::UIContext uiContext;
   Fwg::UI::LandUI landUI;
+  float uiScaleMultiplier = 1.0f;
 
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiContext.imageContext.activeImages[0].size() &&

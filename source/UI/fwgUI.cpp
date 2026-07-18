@@ -1,4 +1,5 @@
 #include "UI/FwgUI.h"
+#include <cmath>
 
 namespace Fwg::UI {
 
@@ -128,6 +129,10 @@ void FwgUI::applyAutoUIScale() {
   static bool styleBackupCreated = false;
   static ImGuiStyle styleBackup;
   static float lastAppliedScale = 1.0f;
+  constexpr float baseReferenceHeight = 1369.0f;
+  constexpr float scaleStep = 0.25f;
+  constexpr float minScale = 1.0f;
+  constexpr float maxScale = 4.0f;
 
   // Create backup of original unscaled style on first call
   if (!styleBackupCreated) {
@@ -135,20 +140,12 @@ void FwgUI::applyAutoUIScale() {
     styleBackupCreated = true;
   }
 
-  // Calculate scale based on window height (1369.0p = 1.0x baseline)
+  // Calculate scale based on window height (discrete jumps keep text sharper)
   ImGuiIO &io = ImGui::GetIO();
-  float targetScale = io.DisplaySize.y / 1369.0f;
-
-  // Dampen downscaling for small screens (prevents UI from becoming too small)
-  // Use power function below 1.0 to reduce scaling aggressiveness
-  if (targetScale < 1.0f) {
-    // Apply dampening: smaller screens scale down less aggressively
-    targetScale = std::pow(targetScale, 0.6f);
-  }
-  // Above 1.0, scale linearly (no dampening for larger screens)
-
-  // Clamp to reasonable range
-  targetScale = std::clamp(targetScale, 0.5f, 3.0f);
+  float targetScale = (io.DisplaySize.y / baseReferenceHeight) * uiScaleMultiplier;
+  targetScale = std::max(targetScale, minScale);
+  targetScale = std::ceil(targetScale / scaleStep) * scaleStep;
+  targetScale = std::clamp(targetScale, minScale, maxScale);
   // Only apply if scale changed (avoid redundant updates)
   if (std::abs(targetScale - lastAppliedScale) > 0.01f) {
     uiContext.layoutContext.uiScale = targetScale;
@@ -398,6 +395,11 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                 (int)ImGui::GetIO().DisplaySize.y);
   }
 
+  if (ImGui::SliderFloat("UI scale multiplier", &uiScaleMultiplier, 1.0f,
+                         2.0f, "%.2fx")) {
+    uiScaleMultiplier = std::clamp(uiScaleMultiplier, 1.0f, 2.0f);
+  }
+
   if (ImGui::Button("Generate all fwg data")) {
     fwg.resetData();
     // reset this because now we randomly generate all data, so heightmap
@@ -412,6 +414,28 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
           uiContext.generationContext.modifiedAreas = true;
           return true;
         });
+  }
+  ImGui::Separator();
+  if (ImGui::Button("Save project")) {
+    auto path = cfg.mapsPath + "/project.fwg";
+    try {
+      fwg.save(path);
+      Fwg::Utils::Logging::logLine("Project saved to ", path);
+    } catch (std::exception &e) {
+      Fwg::Utils::Logging::logLine("Save failed: ", e.what());
+    }
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Load project")) {
+    auto path = cfg.mapsPath + "/project.fwg";
+    try {
+      fwg.load(path);
+      uiContext.imageContext.resetTexture();
+      uiContext.generationContext.modifiedAreas = true;
+      Fwg::Utils::Logging::logLine("Project loaded from ", path);
+    } catch (std::exception &e) {
+      Fwg::Utils::Logging::logLine("Load failed: ", e.what());
+    }
   }
   ImGui::PopItemWidth();
   return true;
