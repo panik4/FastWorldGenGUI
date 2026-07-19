@@ -431,7 +431,6 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     try {
       fwg.load(path);
       uiContext.imageContext.resetTexture();
-      uiContext.generationContext.modifiedAreas = true;
       Fwg::Utils::Logging::logLine("Project loaded from ", path);
     } catch (std::exception &e) {
       Fwg::Utils::Logging::logLine("Load failed: ", e.what());
