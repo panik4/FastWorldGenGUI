@@ -46,8 +46,7 @@ int main() {
     Fwg::Utils::Logging::logLine("You can try fixing it yourself. Error is: ",
                                  e.what());
     Fwg::Utils::Logging::logLine(
-        "Otherwise try running it through a json validator, e.g. "
-        "\"https://jsonlint.com/\" or search for \"json validator\"");
+        "Otherwise try running it through a json validator");
     dumpInfo(e.what(), "");
     return -1;
   }
@@ -74,8 +73,7 @@ int main() {
     Fwg::Utils::Logging::logLine("You can try fixing it yourself. Error is: ",
                                  e.what());
     Fwg::Utils::Logging::logLine(
-        "Otherwise try running it through a json validator, e.g. "
-        "\"https://jsonlint.com/\" or \"search for json validator\"");
+        "Otherwise try running it through a json validator");
     dumpInfo(e.what(), configSubFolder);
     return -1;
   }

@@ -142,7 +142,8 @@ void FwgUI::applyAutoUIScale() {
 
   // Calculate scale based on window height (discrete jumps keep text sharper)
   ImGuiIO &io = ImGui::GetIO();
-  float targetScale = (io.DisplaySize.y / baseReferenceHeight) * uiScaleMultiplier;
+  float targetScale =
+      (io.DisplaySize.y / baseReferenceHeight) * uiScaleMultiplier;
   targetScale = std::max(targetScale, minScale);
   targetScale = std::ceil(targetScale / scaleStep) * scaleStep;
   targetScale = std::clamp(targetScale, minScale, maxScale);
@@ -395,8 +396,8 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                 (int)ImGui::GetIO().DisplaySize.y);
   }
 
-  if (ImGui::SliderFloat("UI scale multiplier", &uiScaleMultiplier, 1.0f,
-                         2.0f, "%.2fx")) {
+  if (ImGui::SliderFloat("UI scale multiplier", &uiScaleMultiplier, 1.0f, 2.0f,
+                         "%.2fx")) {
     uiScaleMultiplier = std::clamp(uiScaleMultiplier, 1.0f, 2.0f);
   }
 
@@ -417,7 +418,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   ImGui::Separator();
   if (ImGui::Button("Save project")) {
-    auto path = cfg.mapsPath + "/project.fwg";
+    auto path = cfg.mapsPath + "/fwg.data";
     try {
       fwg.save(path);
       Fwg::Utils::Logging::logLine("Project saved to ", path);
@@ -427,7 +428,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   ImGui::SameLine();
   if (ImGui::Button("Load project")) {
-    auto path = cfg.mapsPath + "/project.fwg";
+    auto path = cfg.mapsPath + "/fwg.data";
     try {
       fwg.load(path);
       uiContext.imageContext.resetTexture();
