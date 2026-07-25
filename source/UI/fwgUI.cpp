@@ -418,7 +418,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   ImGui::Separator();
   if (ImGui::Button("Save project")) {
-    auto path = cfg.mapsPath + "/fwg.data";
+    auto path = cfg.mapsPath + "fwg.data";
     try {
       fwg.save(path);
       Fwg::Utils::Logging::logLine("Project saved to ", path);
@@ -428,7 +428,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
   ImGui::SameLine();
   if (ImGui::Button("Load project")) {
-    auto path = cfg.mapsPath + "/fwg.data";
+    auto path = cfg.mapsPath + "fwg.data";
     try {
       fwg.load(path);
       uiContext.imageContext.resetTexture();

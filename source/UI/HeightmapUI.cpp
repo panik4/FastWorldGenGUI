@@ -1007,7 +1007,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           cfg.randomSeed = true;
           cfg.reRandomize();
         }
-        fwg.genHeightFromInput(cfg, cfg.mapsPath + "/heightSketchInput.png",
+        fwg.genHeightFromInput(cfg, cfg.mapsPath + "heightSketchInput.png",
                                cfg.landInputMode);
         uiContext.imageContext.resetTexture();
       }
@@ -1032,7 +1032,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       //   cfg.randomSeed = true;
       //   cfg.reRandomize();
       // }
-      //   fwg.genHeightFromInput(cfg, cfg.mapsPath + "/topographyInput.png",
+      //   fwg.genHeightFromInput(cfg, cfg.mapsPath + "topographyInput.png",
       //                          cfg.landInputMode);
       // }
       break;
@@ -1056,7 +1056,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
               if (fwg.genHeightFromInput(
-                      cfg, cfg.mapsPath + "/classifiedLandInput.png",
+                      cfg, cfg.mapsPath + "classifiedLandInput.png",
                       cfg.landInputMode)) {
                 fwg.genLand();
               }
@@ -1077,7 +1077,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         }
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
-              fwg.genHeightFromInput(cfg, cfg.mapsPath + "/landmaskInput.png",
+              fwg.genHeightFromInput(cfg, cfg.mapsPath + "landmaskInput.png",
                                      cfg.landInputMode);
               fwg.genLand();
               updateLayer = true;

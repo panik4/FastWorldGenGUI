@@ -394,11 +394,11 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
   } else if (ImGui::Button("Analyse Input") || analyse) {
     // always reload the classified map from disk
-    Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "/classifiedLandInput.png",
+    Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "classifiedLandInput.png",
                         false);
     analyseLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
     if (!amountClassificationsNeeded) {
-      fwg.genHeightFromInput(cfg, cfg.mapsPath + "/classifiedLandInput.png",
+      fwg.genHeightFromInput(cfg, cfg.mapsPath + "classifiedLandInput.png",
                              cfg.landInputMode);
     }
     uiContext.imageContext.resetTexture();
@@ -421,25 +421,25 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   std::string outputPath = "";
   switch (inputMode) {
   case Fwg::Terrain::InputMode::HEIGHTMAP:
-    outputPath = cfg.mapsPath + "/heightmapInput.png";
+    outputPath = cfg.mapsPath + "heightmapInput.png";
     cfg.allowHeightmapModification = false;
     fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(draggedFile, cfg));
     fwg.genLand();
     uiContext.generationContext.loadedHeightmap = true;
     break;
   case Fwg::Terrain::InputMode::HEIGHTSKETCH:
-    outputPath = cfg.mapsPath + "/heightSketchInput.png";
+    outputPath = cfg.mapsPath + "heightSketchInput.png";
     break;
   case Fwg::Terrain::InputMode::TOPOGRAPHY:
-    outputPath = cfg.mapsPath + "/topographyInput.png";
+    outputPath = cfg.mapsPath + "topographyInput.png";
     break;
 
   case Fwg::Terrain::InputMode::LANDMASK:
-    outputPath = cfg.mapsPath + "/landmaskInput.png";
+    outputPath = cfg.mapsPath + "landmaskInput.png";
     fwg.genHeightFromInput(cfg, draggedFile, inputMode);
     break;
   case Fwg::Terrain::InputMode::LANDFORM:
-    outputPath = cfg.mapsPath + "/landformInput.png";
+    outputPath = cfg.mapsPath + "landformInput.png";
     fwg.genHeightFromInput(cfg, draggedFile, inputMode);
     break;
   default:
@@ -450,7 +450,7 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   // after the first drag, we have saved the original input to this new
   // file now we always want to reload it from here to get the progressive
   // changes, never overwriting the original
-  originalLandInput = cfg.mapsPath + "/classifiedLandInput.png";
+  originalLandInput = cfg.mapsPath + "classifiedLandInput.png";
 }
 
 void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,

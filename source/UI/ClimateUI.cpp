@@ -761,7 +761,7 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
             cfg.complexClimateInput = true;
             Fwg::Gfx::Png::save(uiContext.climateUI.climateInputMap,
-                                cfg.mapsPath + "/classifiedClimateInput.png");
+                                cfg.mapsPath + "classifiedClimateInput.png");
             fwg.loadClimate(cfg, uiContext.climateUI.climateInputMap);
             uiContext.imageContext.resetTexture();
             return true;
