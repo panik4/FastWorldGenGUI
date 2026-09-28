@@ -342,6 +342,7 @@ void FwgUI::initAllowedInput(
                                                       climateType);
   }
 
+  landUI.allowedLandInputs.clear();
   for (const auto &landformDefinition : landformDefinitions) {
     landUI.allowedLandInputs.setValue(landformDefinition.colour,
                                       landformDefinition);
@@ -419,9 +420,17 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::Separator();
   if (ImGui::Button("Save project")) {
     auto path = cfg.mapsPath + "fwg.data";
+    auto configPath = path + ".config";
     try {
       fwg.save(path);
-      Fwg::Utils::Logging::logLine("Project saved to ", path);
+      if (cfg.saveSnapshot(configPath)) {
+        Fwg::Utils::Logging::logLine("Project and config saved to ", path,
+                                     " and ", configPath);
+      } else {
+        Fwg::Utils::Logging::logLine(
+            "Project data saved, but config snapshot save failed: ",
+            configPath);
+      }
     } catch (std::exception &e) {
       Fwg::Utils::Logging::logLine("Save failed: ", e.what());
     }
@@ -429,10 +438,16 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::SameLine();
   if (ImGui::Button("Load project")) {
     auto path = cfg.mapsPath + "fwg.data";
+    auto configPath = path + ".config";
     try {
-      fwg.load(path);
-      uiContext.imageContext.resetTexture();
-      Fwg::Utils::Logging::logLine("Project loaded from ", path);
+      if (cfg.loadSnapshot(configPath)) {
+        fwg.load(path);
+        initAllowedInput(cfg, fwg.climateData,
+                         cfg.terrainConfig.landformDefinitions);
+        uiContext.imageContext.resetTexture();
+        Fwg::Utils::Logging::logLine("Project and config loaded from ", path,
+                                     " and ", configPath);
+      }
     } catch (std::exception &e) {
       Fwg::Utils::Logging::logLine("Load failed: ", e.what());
     }

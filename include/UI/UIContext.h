@@ -107,7 +107,7 @@ struct HelpContext {
   // Loads texts containing information for users from a file
   void loadHelpTextsFromFile(const std::string &filePath) {
     Fwg::Utils::Logging::logLine("Loading help texts from ", filePath);
-    auto lines = Fwg::Parsing::getLines(filePath + "//uiHelpTexts.txt");
+    auto lines = Fwg::Parsing::getLines(filePath + "/uiHelpTexts.txt");
     for (auto &line : lines) {
       auto tokens = Fwg::Parsing::getTokens(line, '|');
       helpTexts[tokens[0]].append(tokens[0]);
@@ -117,7 +117,7 @@ struct HelpContext {
     }
 
     for (const auto &entry :
-         std::filesystem::directory_iterator(filePath + "//uiHelpTexts//")) {
+         std::filesystem::directory_iterator(filePath + "/uiHelpTexts//")) {
       if (entry.is_directory()) {
         continue; // Skip directories
       }
@@ -374,6 +374,7 @@ struct UIContext {
 
   std::string draggedFile = "";
   bool triggeredDrag = false;
+  bool blueMaskRiverImport = false;
   bool tabSwitchEvent(const bool processClickEvents = false) {
     this->drawContext.processClickEvents = processClickEvents;
     if (ImGui::IsMouseReleased(0) && ImGui::IsItemHovered()) {

@@ -909,6 +909,8 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     uiContext.helpContext.showHelpTextBox("Rivers");
 
     ImGui::SeparatorText("River Configuration");
+    ImGui::Checkbox("Treat dropped image as exact-blue river mask",
+                    &uiContext.blueMaskRiverImport);
 
     {
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
@@ -947,8 +949,12 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.loadRivers(
-            cfg, Fwg::IO::Reader::readGenericImage(uiContext.draggedFile, cfg));
+        const auto riverInput =
+            Fwg::IO::Reader::readGenericImage(uiContext.draggedFile, cfg);
+        if (uiContext.blueMaskRiverImport)
+          fwg.loadRiversFromBlueMask(cfg, riverInput);
+        else
+          fwg.loadRivers(cfg, riverInput);
         uiContext.imageContext.resetTexture();
         uiContext.triggeredDrag = false;
       }
