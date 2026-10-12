@@ -536,6 +536,9 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                                 10.0)) {
           uiContext.generationContext.redoHumidity = true;
         }
+        grid.AddCheckbox("Carve River Canyons", &cfg.riverCanyonEnabled);
+        grid.AddInputInt("Canyon Range (pixels)", &cfg.riverCanyonRange, 0,
+                         64);
       }
 
       ImGui::Spacing();

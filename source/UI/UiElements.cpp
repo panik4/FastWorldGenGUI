@@ -1,4 +1,5 @@
 #include "UI/UIElements.h"
+#include "misc/cpp/imgui_stdlib.h"
 namespace Fwg::UI {
 namespace Elements {
 bool BeginMainTabBar(const std::string &label) {
@@ -91,9 +92,10 @@ bool BeginSubTabItem(const std::string &label, const bool highlight) {
   return opened;
 }
 
-GridLayout::GridLayout(int columns, float labelWidth, float itemSpacing)
+GridLayout::GridLayout(int columns, float labelWidth, float itemSpacing,
+                       float inputWidth)
     : columns(columns), currentColumn(0), labelWidth(labelWidth),
-      itemSpacing(itemSpacing), inputWidth(150.0f) {
+      itemSpacing(itemSpacing), inputWidth(inputWidth) {
 
   startPos = ImGui::GetCursorPos();
 
@@ -207,6 +209,21 @@ void GridLayout::AddText(const char *label, const char *format, ...) {
   EndCell();
 }
 
+bool GridLayout::AddInputText(const char *label, std::string *value) {
+  BeginCell();
+  ImGui::BeginGroup();
+  ImGui::PushItemWidth(labelWidth);
+  ImGui::AlignTextToFramePadding();
+  ImGui::Text("%-*s", static_cast<int>(labelWidth) / 7, label);
+  ImGui::PopItemWidth();
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(inputWidth);
+  const auto changed = ImGui::InputText((std::string("##") + label).c_str(), value);
+  ImGui::EndGroup();
+  EndCell();
+  return changed;
+}
+
 bool GridLayout::AddInputInt(const char *label, int *value, int min, int max) {
   BeginCell();
 
@@ -229,6 +246,32 @@ bool GridLayout::AddInputInt(const char *label, int *value, int min, int max) {
   ImGui::PopItemWidth();
   ImGui::EndGroup();
 
+  EndCell();
+  return changed;
+}
+
+bool GridLayout::AddCombo(const char *label, int *current_item,
+                          const char *const items[], int items_count) {
+  BeginCell();
+  ImGui::BeginGroup();
+  ImGui::PushItemWidth(labelWidth);
+  ImGui::AlignTextToFramePadding();
+  ImGui::Text("%-*s", static_cast<int>(labelWidth) / 7, label);
+  ImGui::PopItemWidth();
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(inputWidth);
+  const auto changed = ImGui::Combo((std::string("##") + label).c_str(),
+                                    current_item, items, items_count);
+  ImGui::EndGroup();
+  EndCell();
+  return changed;
+}
+
+bool GridLayout::AddCheckbox(const char *label, bool *value) {
+  BeginCell();
+  ImGui::BeginGroup();
+  const auto changed = ImGui::Checkbox(label, value);
+  ImGui::EndGroup();
   EndCell();
   return changed;
 }
@@ -261,7 +304,7 @@ bool GridLayout::AddInputFloat(const char *label, float *value, float min,
 }
 
 bool GridLayout::AddInputDouble(const char *label, double *value, double min,
-                                double max) {
+                                double max, double step, double step_fast) {
   BeginCell();
 
   ImGui::BeginGroup();
@@ -274,7 +317,7 @@ bool GridLayout::AddInputDouble(const char *label, double *value, double min,
   ImGui::PushItemWidth(inputWidth);
 
   std::string id = "##" + std::string(label);
-  bool changed = ImGui::InputDouble(id.c_str(), value, 0.01, 0.1);
+  bool changed = ImGui::InputDouble(id.c_str(), value, step, step_fast);
 
   if (changed) {
     *value = std::clamp(*value, min, max);

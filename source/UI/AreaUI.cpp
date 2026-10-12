@@ -169,6 +169,8 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           10.0);
       grid.AddInputDouble("Distance Influence", &cfg.segmentDistanceInfluence,
                           0.0, 10.0);
+      grid.AddInputInt("River Border Fix Threshold", &cfg.removeChunkThreshold,
+                       1, 10000);
 
       if (grid.AddInputInt("Target Land Regions", &cfg.targetLandRegionAmount,
                            1, 10000)) {
@@ -219,6 +221,26 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               fwg.genSegments(cfg);
               uiContext.imageContext.resetTexture();
               return true;
+            });
+      }
+
+      ImGui::SameLine();
+      const bool canFixRiverBorders =
+          !fwg.areaData.segments.empty() && !fwg.climateData.rivers.empty();
+      ImGui::BeginDisabled(!canFixRiverBorders);
+      const bool fixRiverBordersClicked =
+          UI::Elements::ImportantStepButton("Fix River Borders",
+                                            ImVec2(220, 0));
+      ImGui::EndDisabled();
+      if (fixRiverBordersClicked) {
+        uiContext.asyncContext.computationFutureBool =
+            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
+              const bool changed = fwg.fixSegmentBordersAtRivers(cfg);
+              if (changed) {
+                uiContext.generationContext.modifiedAreas = true;
+                uiContext.imageContext.resetTexture();
+              }
+              return changed;
             });
       }
 
