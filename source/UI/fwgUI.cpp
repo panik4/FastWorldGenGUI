@@ -406,7 +406,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     fwg.resetData();
     // reset this because now we randomly generate all data, so heightmap
     // modifications MUST be allowed again
-    cfg.allowHeightmapModification = true;
+    cfg.terrainConfig.allowHeightmapModification = true;
 
     // run the generation async
     uiContext.asyncContext.computationFutureBool =
@@ -486,20 +486,20 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     if (ImGui::RadioButton("Generate Simulated Climate",
                            reinterpret_cast<int *>(&climateMode),
                            static_cast<int>(ClimateMode::DEFAULT))) {
-      cfg.fantasyClimate = false;
+      cfg.climateConfig.fantasyClimate = false;
       uiContext.generationContext.redoHumidity = true;
     }
     ImGui::SameLine();
     if (ImGui::RadioButton("Generate Random Climate",
                            reinterpret_cast<int *>(&climateMode),
                            static_cast<int>(ClimateMode::FANTASY))) {
-      cfg.fantasyClimate = true;
+      cfg.climateConfig.fantasyClimate = true;
     }
     ImGui::SameLine();
     if (ImGui::RadioButton("Use Climate Input Map",
                            reinterpret_cast<int *>(&climateMode),
                            static_cast<int>(ClimateMode::INPUT))) {
-      cfg.fantasyClimate = false;
+      cfg.climateConfig.fantasyClimate = false;
       uiContext.generationContext.redoHumidity = true;
     }
 
@@ -513,10 +513,11 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       {
         UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
 
-        if (grid.AddInputDouble("Base Temperature", &cfg.baseTemperature,
-                                -100.0, 100.0) |
-            grid.AddInputDouble("Base Humidity", &cfg.baseHumidity, 0.0,
-                                100.0)) {
+        if (grid.AddInputDouble("Base Temperature",
+                                &cfg.climateConfig.baseTemperature, -100.0,
+                                100.0) |
+            grid.AddInputDouble("Base Humidity",
+                                &cfg.climateConfig.baseHumidity, 0.0, 100.0)) {
           uiContext.generationContext.redoHumidity = true;
         }
       }
@@ -530,15 +531,16 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         if (grid.AddInputDouble("Latitude High", &cfg.latHigh, -90.0, 90.0) |
             grid.AddInputDouble("Latitude Low", &cfg.latLow, -90.0, 90.0) |
             grid.AddInputDouble("River Amount", &cfg.riverFactor, 0.0, 10.0) |
-            grid.AddInputDouble("River Humidity", &cfg.riverHumidityFactor, 0.0,
+            grid.AddInputDouble("River Humidity",
+                                &cfg.climateConfig.riverHumidityFactor, 0.0,
                                 10.0) |
-            grid.AddInputDouble("River Range", &cfg.riverEffectRangeFactor, 0.0,
+            grid.AddInputDouble("River Range",
+                                &cfg.climateConfig.riverEffectRangeFactor, 0.0,
                                 10.0)) {
           uiContext.generationContext.redoHumidity = true;
         }
         grid.AddCheckbox("Carve River Canyons", &cfg.riverCanyonEnabled);
-        grid.AddInputInt("Canyon Range (pixels)", &cfg.riverCanyonRange, 0,
-                         64);
+        grid.AddInputInt("Canyon Range (pixels)", &cfg.riverCanyonRange, 0, 64);
       }
 
       ImGui::Spacing();
@@ -567,9 +569,15 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
     if (climateMode == ClimateMode::FANTASY) {
       UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
-      grid.AddInputDouble("Fantasy Frequency", &cfg.fantasyClimateFrequency,
-                          0.0, 10.0);
+      grid.AddInputDouble("Fantasy Frequency",
+                          &cfg.climateConfig.fantasyClimateFrequency, 0.0,
+                          10.0);
     }
+
+    ImGui::InputFloat("Climate Noise Frequency",
+                      &cfg.climateConfig.noiseFrequencyModifier);
+    ImGui::InputDouble("Climate Noise Edge Limit",
+                       &cfg.climateConfig.noiseEdgeLimitFactor);
 
     if (UI::Elements::BeginSubTabBar("Climate Generation", 0.0f)) {
       if (climateMode == ClimateMode::DEFAULT ||
@@ -609,7 +617,7 @@ int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
               fwg.genHabitability(cfg);
               fwg.genSuperSegments(cfg);
               fwg.genSegments(cfg);
-              fwg.genProvinces();
+              fwg.genProvinces(cfg);
               fwg.genContinents(cfg);
               uiContext.imageContext.resetTexture();
               return true;

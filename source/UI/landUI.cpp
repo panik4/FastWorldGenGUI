@@ -9,7 +9,7 @@ int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     if (uiContext.tabSwitchEvent(true)) {
       uiContext.imageContext.updateImage(0, landInput);
       uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
-      if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+      if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
         uiContext.imageContext.updateImage(
             1, Fwg::Gfx::Land::displayLayerWeights(fwg.terrainData));
       }
@@ -18,45 +18,45 @@ int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     //  Selection of land input mode
     ImGui::TextUnformatted("Land Input Mode");
     ImGui::RadioButton("Heightmap. A finished heightmap",
-                       cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP);
+                       cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP);
     if (ImGui::IsItemClicked()) {
-      cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTMAP;
+      cfg.terrainConfig.landInputMode = Fwg::Terrain::InputMode::HEIGHTMAP;
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "default.json");
       cfg.terrainConfig.heightmapPipeline =
           Fwg::Terrain::createDefaultPipeline();
     }
     // ImGui::RadioButton("Heightmap Sketch. A rough outline of a heightmap",
-    //                    cfg.landInputMode ==
+    //                    cfg.terrainConfig.landInputMode ==
     //                        Fwg::Terrain::InputMode::HEIGHTSKETCH);
     // if (ImGui::IsItemClicked()) {
-    //   cfg.landInputMode = Fwg::Terrain::InputMode::HEIGHTSKETCH;
+    //   cfg.terrainConfig.landInputMode = Fwg::Terrain::InputMode::HEIGHTSKETCH;
     //   cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
     //                           "mappedInput.json");
     //   cfg.terrainConfig.heightmapPipeline =
     //       Fwg::Terrain::createDefaultPipeline();
     // }
     ImGui::RadioButton("Land Mask. A simple land/water mask",
-                       cfg.landInputMode == Fwg::Terrain::InputMode::LANDMASK);
+                       cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDMASK);
     if (ImGui::IsItemClicked()) {
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "default.json");
-      cfg.landInputMode = Fwg::Terrain::InputMode::LANDMASK;
+      cfg.terrainConfig.landInputMode = Fwg::Terrain::InputMode::LANDMASK;
       cfg.terrainConfig.heightmapPipeline =
           Fwg::Terrain::createDefaultPipeline();
     }
     ImGui::RadioButton(
         "Landform. A detailed input map of various colours, that can be mapped "
         "to mountains, lakes, valleys, plains, and more.",
-        cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM);
+        cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM);
     if (ImGui::IsItemClicked()) {
-      cfg.landInputMode = Fwg::Terrain::InputMode::LANDFORM;
+      cfg.terrainConfig.landInputMode = Fwg::Terrain::InputMode::LANDFORM;
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "mappedInput.json");
       cfg.terrainConfig.heightmapPipeline =
           Fwg::Terrain::createLandformPipeline();
     }
-    if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM &&
+    if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM &&
         landInput.size()) {
       complexLandMapping(
           cfg, fwg, uiContext.generationContext.analyze,
@@ -64,14 +64,14 @@ int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
 
     if (uiContext.triggeredDrag) {
-      cfg.allowHeightmapModification = true;
+      cfg.terrainConfig.allowHeightmapModification = true;
       uiContext.asyncContext.computationFutureBool =
           uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext, this]() {
             triggeredLandInput(cfg, fwg, uiContext.draggedFile,
-                               cfg.landInputMode, uiContext);
+                               cfg.terrainConfig.landInputMode, uiContext);
 
             // in case of complex input and a drag, we NEED to initially analyze
-            if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+            if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
               uiContext.generationContext.analyze = true;
             }
             uiContext.triggeredDrag = false;
@@ -399,7 +399,7 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     analyseLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
     if (!amountClassificationsNeeded) {
       fwg.genHeightFromInput(cfg, cfg.mapsPath + "classifiedLandInput.png",
-                             cfg.landInputMode);
+                             cfg.terrainConfig.landInputMode);
     }
     uiContext.imageContext.resetTexture();
 
@@ -422,7 +422,7 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   switch (inputMode) {
   case Fwg::Terrain::InputMode::HEIGHTMAP:
     outputPath = cfg.mapsPath + "heightmapInput.png";
-    cfg.allowHeightmapModification = false;
+    cfg.terrainConfig.allowHeightmapModification = false;
     fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(draggedFile, cfg));
     fwg.genLand();
     uiContext.generationContext.loadedHeightmap = true;

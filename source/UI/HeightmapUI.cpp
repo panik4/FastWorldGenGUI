@@ -532,7 +532,7 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
 
 void configureLandElevationFactors(Fwg::Cfg &cfg,
                                    Fwg::FastWorldGenerator &fwg) {
-  if (cfg.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+  if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
     ImGui::SeparatorText("Land Elevation Factors");
     const float labelWidth = 10.0f;
     const float inputWidth = 100.0f;
@@ -683,22 +683,22 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
 
-      grid.AddText("Sealevel", "%d", cfg.seaLevel);
+      grid.AddText("Sealevel", "%d", cfg.terrainConfig.seaLevel);
 
-      if (cfg.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP) {
-        grid.AddSliderFloat("Target Land %", &cfg.landPercentage, 0.0f, 1.0f);
-        grid.AddInputInt("Height Adjustments", &cfg.heightAdjustments, 0, 100);
+      if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP) {
+        grid.AddSliderFloat("Target Land %", &cfg.terrainConfig.landPercentage, 0.0f, 1.0f);
+        grid.AddInputInt("Height Adjustments", &cfg.terrainConfig.heightAdjustments, 0, 100);
 
       } else {
-        grid.AddText("Land Percentage", "%.2f%%", cfg.landPercentage * 100.0f);
+        grid.AddText("Land Percentage", "%.2f%%", cfg.terrainConfig.landPercentage * 100.0f);
       }
-      grid.AddInputFloat("Coastal Distance", &cfg.layerApplicationFactor, 0.0f,
+      grid.AddInputFloat("Coastal Distance", &cfg.terrainConfig.heightmap.layerApplicationFactor, 0.0f,
                          10.0f);
-      grid.AddInputDouble("Lake Size Factor", &cfg.lakeMaxShare, 0.0, 1.0);
-      if (grid.AddInputInt("Max Land Height", &cfg.maxLandHeight,
-                           cfg.seaLevel + 1, 255)) {
-        cfg.maxLandHeight =
-            std::clamp(cfg.maxLandHeight, cfg.seaLevel + 1, 255);
+      grid.AddInputDouble("Lake Size Factor", &cfg.terrainConfig.lakeMaxShare, 0.0, 1.0);
+      if (grid.AddInputInt("Max Land Height", &cfg.terrainConfig.heightmap.maxLandHeight,
+                           cfg.terrainConfig.seaLevel + 1, 255)) {
+        cfg.terrainConfig.heightmap.maxLandHeight =
+            std::clamp(cfg.terrainConfig.heightmap.maxLandHeight, cfg.terrainConfig.seaLevel + 1, 255);
       }
     }
 
@@ -714,11 +714,11 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
 
       grid.AddSliderFloat("Heightmap Frequency",
-                          &cfg.heightmapFrequencyModifier, 0.1f, 10.0f);
+                          &cfg.terrainConfig.heightmap.heightmapFrequencyModifier, 0.1f, 10.0f);
       grid.AddSliderFloat("Edge Fade Width Factor",
-                          &cfg.globalEdgeFadeWidthModifier, 0.0f, 10.0f);
+                          &cfg.terrainConfig.heightmap.globalEdgeFadeWidthModifier, 0.0f, 10.0f);
       grid.AddSliderFloat("Edge Fade Height Factor",
-                          &cfg.globalEdgeFadeHeightModifier, 0.0f, 10.0f);
+                          &cfg.terrainConfig.heightmap.globalEdgeFadeHeightModifier, 0.0f, 10.0f);
     }
 
     ImGui::Spacing();
@@ -745,20 +745,20 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       // Get current layer vector
-      std::vector<LayerConfig> *currentLayers = nullptr;
+      std::vector<Fwg::Terrain::LayerConfig> *currentLayers = nullptr;
       const char *layerTypeName = "";
 
       switch (layerTypeSelection) {
       case 0:
-        currentLayers = &cfg.shapeLayers;
+        currentLayers = &cfg.terrainConfig.heightmap.shapeLayers;
         layerTypeName = "Shape";
         break;
       case 1:
-        currentLayers = &cfg.landLayers;
+        currentLayers = &cfg.terrainConfig.heightmap.landLayers;
         layerTypeName = "Land";
         break;
       case 2:
-        currentLayers = &cfg.seaLayers;
+        currentLayers = &cfg.terrainConfig.heightmap.seaLayers;
         layerTypeName = "Sea";
         break;
       }
@@ -792,10 +792,11 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         ImGui::Separator();
 
         if (ImGui::Button("Add Layer", ImVec2(-1, 0))) {
-          LayerConfig newLayer{};
+          Fwg::Terrain::LayerConfig newLayer{};
           newLayer.noiseType = 3;
           newLayer.fractalType = 3;
-          newLayer.type = static_cast<LayerType>(layerTypeSelection);
+          newLayer.type =
+              static_cast<Fwg::Terrain::LayerType>(layerTypeSelection);
           newLayer.fractalFrequency = 0.5f;
           newLayer.fractalOctaves = 11;
           newLayer.fractalGain = 0.5f;
@@ -835,7 +836,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           true, ImGuiWindowFlags_None);
 
         if (selectedLayer < currentLayers->size()) {
-          LayerConfig &layer = (*currentLayers)[selectedLayer];
+          Fwg::Terrain::LayerConfig &layer =
+              (*currentLayers)[selectedLayer];
 
           ImGui::Text("Editing %s Layer %d", layerTypeName, selectedLayer);
           ImGui::Separator();
@@ -944,7 +946,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::Spacing();
 
     // Generation buttons based on input mode
-    switch (cfg.landInputMode) {
+    switch (cfg.terrainConfig.landInputMode) {
     case Fwg::Terrain::InputMode::HEIGHTMAP: {
       if (uiContext.generationContext.loadedHeightmap) {
         ImGui::Text("Warning: A heightmap was already loaded. Generating a new "
@@ -1008,7 +1010,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           cfg.reRandomize();
         }
         fwg.genHeightFromInput(cfg, cfg.mapsPath + "heightSketchInput.png",
-                               cfg.landInputMode);
+                               cfg.terrainConfig.landInputMode);
         uiContext.imageContext.resetTexture();
       }
 
@@ -1033,7 +1035,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       //   cfg.reRandomize();
       // }
       //   fwg.genHeightFromInput(cfg, cfg.mapsPath + "topographyInput.png",
-      //                          cfg.landInputMode);
+      //                          cfg.terrainConfig.landInputMode);
       // }
       break;
     }
@@ -1057,7 +1059,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
               if (fwg.genHeightFromInput(
                       cfg, cfg.mapsPath + "classifiedLandInput.png",
-                      cfg.landInputMode)) {
+                      cfg.terrainConfig.landInputMode)) {
                 fwg.genLand();
               }
               updateLayer = true;
@@ -1078,7 +1080,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
               fwg.genHeightFromInput(cfg, cfg.mapsPath + "landmaskInput.png",
-                                     cfg.landInputMode);
+                                     cfg.terrainConfig.landInputMode);
               fwg.genLand();
               updateLayer = true;
               uiContext.imageContext.resetTexture();
@@ -1095,7 +1097,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     // Drag & drop handler
     if (uiContext.triggeredDrag) {
       uiContext.triggeredDrag = false;
-      cfg.allowHeightmapModification = false;
+      cfg.terrainConfig.allowHeightmapModification = false;
       fwg.loadHeight(
           cfg, IO::Reader::readHeightmapImage(uiContext.draggedFile, cfg));
       uiContext.imageContext.resetTexture();

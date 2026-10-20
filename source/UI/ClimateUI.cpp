@@ -799,7 +799,7 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
          UI::PrerequisiteChecker::landMask(fwg.terrainData)});
 
     if (guard.ready()) {
-      if (!cfg.fantasyClimate &&
+      if (!cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton("Generate Temperature Map",
                                             ImVec2(280, 0))) {
         uiContext.asyncContext.computationFutureBool =
@@ -809,7 +809,7 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               return true;
             });
       }
-      if (cfg.fantasyClimate &&
+      if (cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton(
               "Generate Temperature Map (new seed)", ImVec2(280, 0))) {
         uiContext.asyncContext.computationFutureBool =
@@ -860,8 +860,9 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
          UI::PrerequisiteChecker::landMask(fwg.terrainData)});
 
     if (guard.ready()) {
-      if (!cfg.fantasyClimate && UI::Elements::ImportantStepButton(
-                                     "Generate Humidity Map", ImVec2(220, 0))) {
+      if (!cfg.climateConfig.fantasyClimate &&
+          UI::Elements::ImportantStepButton("Generate Humidity Map",
+                                            ImVec2(220, 0))) {
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
               fwg.genHumidity(cfg);
@@ -869,7 +870,7 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               return true;
             });
       }
-      if (cfg.fantasyClimate &&
+      if (cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton("Generate Humidity Map (new seed)",
                                             ImVec2(280, 0))) {
         uiContext.asyncContext.computationFutureBool =
@@ -997,7 +998,7 @@ int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               uiContext.imageContext.resetTexture();
               return true;
             });
-      } else if (cfg.fantasyClimate &&
+      } else if (cfg.climateConfig.fantasyClimate &&
                  ImGui::Button("Generate completely random fantasy climate")) {
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
@@ -1041,15 +1042,18 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
 
-      grid.AddInputDouble("Boreal Density", &cfg.borealDensity, 0.0, 1.0);
-      grid.AddInputDouble("Temperate Needle", &cfg.temperateNeedleDensity, 0.0,
-                          1.0);
-      grid.AddInputDouble("Temperate Mixed", &cfg.temperateMixedDensity, 0.0,
-                          1.0);
-      grid.AddInputDouble("Sparse Density", &cfg.sparseDensity, 0.0, 1.0);
-      grid.AddInputDouble("Tropical Dry", &cfg.tropicalDryDensity, 0.0, 1.0);
-      grid.AddInputDouble("Tropical Moist", &cfg.tropicalMoistDensity, 0.0,
-                          1.0);
+      grid.AddInputDouble("Boreal Density", &cfg.climateConfig.borealDensity,
+                          0.0, 1.0);
+      grid.AddInputDouble("Temperate Needle",
+                          &cfg.climateConfig.temperateNeedleDensity, 0.0, 1.0);
+      grid.AddInputDouble("Temperate Mixed",
+                          &cfg.climateConfig.temperateMixedDensity, 0.0, 1.0);
+      grid.AddInputDouble("Sparse Density", &cfg.climateConfig.sparseDensity,
+                          0.0, 1.0);
+      grid.AddInputDouble("Tropical Dry", &cfg.climateConfig.tropicalDryDensity,
+                          0.0, 1.0);
+      grid.AddInputDouble("Tropical Moist",
+                          &cfg.climateConfig.tropicalMoistDensity, 0.0, 1.0);
     }
 
     ImGui::Spacing();

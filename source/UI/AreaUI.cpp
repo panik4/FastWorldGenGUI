@@ -6,14 +6,14 @@ void areaInputSelector(Fwg::Cfg &cfg) {
   ImGui::TextUnformatted("Area Input Mode");
 
   ImGui::RadioButton("Solid",
-                     cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID);
+                     cfg.areaConfig.common.inputMode == Fwg::Areas::AreaInputType::SOLID);
   if (ImGui::IsItemClicked()) {
-    cfg.areaInputMode = Fwg::Areas::AreaInputType::SOLID;
+    cfg.areaConfig.common.inputMode = Fwg::Areas::AreaInputType::SOLID;
   }
   ImGui::RadioButton("Borders",
-                     cfg.areaInputMode == Fwg::Areas::AreaInputType::BORDERS);
+                     cfg.areaConfig.common.inputMode == Fwg::Areas::AreaInputType::BORDERS);
   if (ImGui::IsItemClicked()) {
-    cfg.areaInputMode = Fwg::Areas::AreaInputType::BORDERS;
+    cfg.areaConfig.common.inputMode = Fwg::Areas::AreaInputType::BORDERS;
   }
 }
 
@@ -75,7 +75,8 @@ void showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       if (fwg.worldMap.size()) {
         uiContext.imageContext.updateImage(
             0, Fwg::Gfx::Segments::displaySuperSegments(
-                   fwg.areaData.superSegments));
+                   fwg.areaData.superSegments,
+                   fwg.areaGenerationContext(cfg)));
         uiContext.imageContext.updateImage(1, fwg.errorMap);
       }
     }
@@ -116,7 +117,7 @@ void showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               auto evaluationAreas =
                   Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                       fwg.terrainData.landMask);
-              if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
+              if (cfg.areaConfig.common.inputMode == Fwg::Areas::AreaInputType::SOLID) {
                 auto image = Fwg::IO::Reader::readGenericImageWithBorders(
                     uiContext.draggedFile, cfg, evaluationAreas);
                 if (image.size() == 0) {
@@ -165,23 +166,21 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
 
-      grid.AddInputDouble("Cost Influence", &cfg.segmentCostInfluence, 0.0,
+      grid.AddInputDouble("Cost Influence", &cfg.areaConfig.segments.costInfluence, 0.0,
                           10.0);
-      grid.AddInputDouble("Distance Influence", &cfg.segmentDistanceInfluence,
+      grid.AddInputDouble("Distance Influence", &cfg.areaConfig.segments.distanceInfluence,
                           0.0, 10.0);
-      grid.AddInputInt("River Border Fix Threshold", &cfg.removeChunkThreshold,
+      grid.AddInputInt("River Border Fix Threshold", &cfg.areaConfig.segments.removeChunkThreshold,
                        1, 10000);
 
-      if (grid.AddInputInt("Target Land Regions", &cfg.targetLandRegionAmount,
+      if (grid.AddInputInt("Target Land Regions", &cfg.areaConfig.regions.targetLandAmount,
                            1, 10000)) {
-        cfg.autoLandRegionParams = true;
-        cfg.calcAreaParameters();
+        cfg.areaConfig.regions.autoLandParameters = true;
       }
 
-      if (grid.AddInputInt("Target Sea Regions", &cfg.targetSeaRegionAmount, 1,
+      if (grid.AddInputInt("Target Sea Regions", &cfg.areaConfig.regions.targetSeaAmount, 1,
                            10000)) {
-        cfg.autoSeaRegionParams = true;
-        cfg.calcAreaParameters();
+        cfg.areaConfig.regions.autoSeaParameters = true;
       }
     }
 
@@ -251,7 +250,7 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               const auto evaluationAreas =
                   Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                       fwg.terrainData.landMask);
-              if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
+              if (cfg.areaConfig.common.inputMode == Fwg::Areas::AreaInputType::SOLID) {
                 fwg.loadSegments(
                     cfg, Fwg::IO::Reader::readGenericImageWithBorders(
                              uiContext.draggedFile, cfg, evaluationAreas));
@@ -264,7 +263,8 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                 fwg.loadSegments(cfg, image);
               }
               fwg.segmentMap =
-                  Fwg::Gfx::Segments::displaySegments(fwg.areaData.segments);
+                  Fwg::Gfx::Segments::displaySegments(
+                      fwg.areaData.segments, fwg.areaGenerationContext(cfg));
               uiContext.imageContext.resetTexture();
               uiContext.generationContext.modifiedAreas = true;
               return true;
@@ -297,12 +297,12 @@ int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
 
-      grid.AddInputDouble("Land Factor", &cfg.landProvFactor, 0.0, 10.0);
-      grid.AddInputDouble("Sea Factor", &cfg.seaProvFactor, 0.0, 10.0);
-      grid.AddInputDouble("Density Effects", &cfg.provinceDensityEffects, 0.0,
+      grid.AddInputDouble("Land Factor", &cfg.areaConfig.provinces.landFactor, 0.0, 10.0);
+      grid.AddInputDouble("Sea Factor", &cfg.areaConfig.provinces.seaFactor, 0.0, 10.0);
+      grid.AddInputDouble("Density Effects", &cfg.areaConfig.provinces.densityEffects, 0.0,
                           1.0);
-      grid.AddInputInt("Min Province Size", &cfg.minProvSize, 9, 1000);
-      grid.AddInputInt("Max Province Count", &cfg.maxProvAmount, 100, 100000);
+      grid.AddInputInt("Min Province Size", &cfg.areaConfig.provinces.minSize, 9, 1000);
+      grid.AddInputInt("Max Province Count", &cfg.areaConfig.provinces.maxAmount, 100, 100000);
       grid.AddText("Current Provinces", "%d",
                    (int)fwg.areaData.provinces.size());
     }
@@ -327,10 +327,9 @@ int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       if (UI::Elements::ImportantStepButton("Generate Provinces",
                                             ImVec2(220, 0))) {
         uiContext.generationContext.modifiedAreas = true;
-        cfg.calcAreaParameters();
         uiContext.asyncContext.computationFutureBool =
             uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
-              if (!fwg.genProvinces()) {
+              if (!fwg.genProvinces(cfg)) {
                 return false;
               }
               uiContext.imageContext.resetTexture();
@@ -346,7 +345,7 @@ int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               auto evaluationAreas =
                   Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
                       fwg.terrainData.landMask);
-              if (cfg.areaInputMode == Fwg::Areas::AreaInputType::SOLID) {
+              if (cfg.areaConfig.common.inputMode == Fwg::Areas::AreaInputType::SOLID) {
                 fwg.loadProvinces(
                     cfg, Fwg::IO::Reader::readGenericImageWithBorders(
                              uiContext.draggedFile, cfg, evaluationAreas));
@@ -424,7 +423,8 @@ int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         fwg.areaData.regions.size()) {
       uiContext.imageContext.updateImage(
           0, Fwg::Gfx::simpleContinents(fwg.areaData.continents,
-                                        fwg.areaData.seaBodies));
+                                        fwg.areaData.seaBodies,
+                                        fwg.areaGenerationContext(cfg)));
       uiContext.imageContext.updateImage(
           1, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
     }
@@ -435,7 +435,7 @@ int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     {
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
-      grid.AddInputInt("Max Continents", &cfg.maxAmountOfContinents, 1, 50);
+      grid.AddInputInt("Max Continents", &cfg.areaConfig.continents.maxAmount, 1, 50);
       grid.AddText("Current Continents", "%d",
                    (int)fwg.areaData.continents.size());
     }
