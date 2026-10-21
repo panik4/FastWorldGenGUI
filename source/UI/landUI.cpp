@@ -9,16 +9,19 @@ int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     if (uiContext.tabSwitchEvent(true)) {
       uiContext.imageContext.updateImage(0, landInput);
       uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
-      if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+      if (cfg.terrainConfig.landInputMode ==
+          Fwg::Terrain::InputMode::LANDFORM) {
         uiContext.imageContext.updateImage(
-            1, Fwg::Gfx::Land::displayLayerWeights(fwg.terrainData));
+            1, Fwg::Gfx::Land::displayLayerWeights(fwg.terrainData,
+                                                   cfg.visualizationContext()));
       }
     }
     uiContext.helpContext.showHelpTextBox("Land");
     //  Selection of land input mode
     ImGui::TextUnformatted("Land Input Mode");
     ImGui::RadioButton("Heightmap. A finished heightmap",
-                       cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP);
+                       cfg.terrainConfig.landInputMode ==
+                           Fwg::Terrain::InputMode::HEIGHTMAP);
     if (ImGui::IsItemClicked()) {
       cfg.terrainConfig.landInputMode = Fwg::Terrain::InputMode::HEIGHTMAP;
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
@@ -30,14 +33,16 @@ int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     //                    cfg.terrainConfig.landInputMode ==
     //                        Fwg::Terrain::InputMode::HEIGHTSKETCH);
     // if (ImGui::IsItemClicked()) {
-    //   cfg.terrainConfig.landInputMode = Fwg::Terrain::InputMode::HEIGHTSKETCH;
+    //   cfg.terrainConfig.landInputMode =
+    //   Fwg::Terrain::InputMode::HEIGHTSKETCH;
     //   cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
     //                           "mappedInput.json");
     //   cfg.terrainConfig.heightmapPipeline =
     //       Fwg::Terrain::createDefaultPipeline();
     // }
     ImGui::RadioButton("Land Mask. A simple land/water mask",
-                       cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDMASK);
+                       cfg.terrainConfig.landInputMode ==
+                           Fwg::Terrain::InputMode::LANDMASK);
     if (ImGui::IsItemClicked()) {
       cfg.readHeightmapConfig(cfg.workingDirectory + "configs/heightmap/" +
                               "default.json");
@@ -65,18 +70,22 @@ int LandUI::showLandInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     if (uiContext.triggeredDrag) {
       cfg.terrainConfig.allowHeightmapModification = true;
-      uiContext.asyncContext.computationFutureBool =
-          uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext, this]() {
-            triggeredLandInput(cfg, fwg, uiContext.draggedFile,
-                               cfg.terrainConfig.landInputMode, uiContext);
-
-            // in case of complex input and a drag, we NEED to initially analyze
-            if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
+      const auto inputMode = cfg.terrainConfig.landInputMode;
+      const auto draggedFile = uiContext.draggedFile;
+      uiContext.asyncContext.runAsync(
+          [&fwg, &cfg, this, inputMode, draggedFile]() {
+            return triggeredLandInput(cfg, fwg, draggedFile, inputMode);
+          },
+          [&uiContext, inputMode](TaskResult::Outcome outcome) {
+            uiContext.triggeredDrag = false;
+            uiContext.generationContext.loadedHeightmap =
+                outcome == TaskResult::Outcome::Success &&
+                inputMode == Fwg::Terrain::InputMode::HEIGHTMAP;
+            if (outcome == TaskResult::Outcome::Success &&
+                inputMode == Fwg::Terrain::InputMode::LANDFORM) {
+              // Complex landform input needs an initial analysis pass.
               uiContext.generationContext.analyze = true;
             }
-            uiContext.triggeredDrag = false;
-            uiContext.imageContext.resetTexture();
-            return true;
           });
     }
     ImGui::EndTabItem();
@@ -407,25 +416,28 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   }
 }
 
-void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+bool LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                                 const std::string &draggedFile,
-                                const Fwg::Terrain::InputMode &inputMode,
-                                UI::UIContext &uiContext) {
+                                const Fwg::Terrain::InputMode &inputMode) {
   originalLandInput = draggedFile;
-  uiContext.generationContext.loadedHeightmap = false;
   fwg.resetData();
-  fwg.configure(cfg);
+  if (!fwg.configure(cfg))
+    return false;
   // don't immediately generate from the input, instead allow to manually
   // classify all present colours
-  landInput = Fwg::IO::Reader::readGenericImage(draggedFile, cfg, false);
+  landInput = Fwg::IO::Reader::readGenericImage(draggedFile,
+                                                cfg.imageReadContext(), false);
+  if (!landInput.size())
+    return false;
   std::string outputPath = "";
   switch (inputMode) {
   case Fwg::Terrain::InputMode::HEIGHTMAP:
     outputPath = cfg.mapsPath + "heightmapInput.png";
     cfg.terrainConfig.allowHeightmapModification = false;
-    fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(draggedFile, cfg));
-    fwg.genLand();
-    uiContext.generationContext.loadedHeightmap = true;
+    if (!fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(
+                                 draggedFile, cfg.imageReadContext())) ||
+        !fwg.genLand())
+      return false;
     break;
   case Fwg::Terrain::InputMode::HEIGHTSKETCH:
     outputPath = cfg.mapsPath + "heightSketchInput.png";
@@ -436,11 +448,13 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
   case Fwg::Terrain::InputMode::LANDMASK:
     outputPath = cfg.mapsPath + "landmaskInput.png";
-    fwg.genHeightFromInput(cfg, draggedFile, inputMode);
+    if (!fwg.genHeightFromInput(cfg, draggedFile, inputMode))
+      return false;
     break;
   case Fwg::Terrain::InputMode::LANDFORM:
     outputPath = cfg.mapsPath + "landformInput.png";
-    fwg.genHeightFromInput(cfg, draggedFile, inputMode);
+    if (!fwg.genHeightFromInput(cfg, draggedFile, inputMode))
+      return false;
     break;
   default:
     break;
@@ -451,44 +465,7 @@ void LandUI::triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   // file now we always want to reload it from here to get the progressive
   // changes, never overwriting the original
   originalLandInput = cfg.mapsPath + "classifiedLandInput.png";
-}
-
-void LandUI::draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                  UI::UIContext &uiContext) {
-  static std::vector<Fwg::Gfx::Colour> allowedLandInputColours;
-  static std::vector<std::string> allowedLandInputColoursNames;
-  static Fwg::Gfx::Colour selectedTypeColour;
-  static int current_item = 0;
-  if (!allowedLandInputColours.size()) {
-    for (auto &elem : allowedLandInputs.getMap()) {
-      allowedLandInputColours.push_back(elem.second.colour);
-      allowedLandInputColoursNames.push_back(elem.second.name);
-    }
-  }
-  ImGui::PushItemWidth(uiContext.scaled(200.0f));
-  if (ImGui::BeginCombo("Colour Selection",
-                        allowedLandInputColoursNames[current_item].c_str())) {
-    for (int n = 0; n < allowedLandInputColours.size(); n++) {
-      bool is_selected = (current_item == n);
-      if (ImGui::Selectable(allowedLandInputColoursNames[n].c_str(),
-                            is_selected)) {
-        current_item = n;
-      }
-      if (is_selected) {
-        ImGui::SetItemDefaultFocus();
-      }
-    }
-    ImGui::EndCombo();
-  }
-  ImGui::PopItemWidth();
-  selectedTypeColour = allowedLandInputColours[current_item];
-  auto affected = Fwg::UI::Drawing::getLatestAffectedPixels();
-  if (affected.size() > 0) {
-    for (auto &pix : affected) {
-      landInput.setColourAtIndex(pix.first.pixel, selectedTypeColour);
-    }
-    // TODO DRAWINGuiUtils->resetTexture();
-  }
+  return true;
 }
 
 } // namespace Fwg::UI

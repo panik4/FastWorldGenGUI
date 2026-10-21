@@ -67,70 +67,8 @@ ImGuiIO &setupImGuiContextAndStyle() {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
-  // Store default style for UI scaling
-  static bool styleInitialized = false;
-  static ImGuiStyle defaultStyle;
-  if (!styleInitialized) {
-    defaultStyle = ImGui::GetStyle();
-    styleInitialized = true;
-  }
   ImGui::StyleColorsDark();
   return io;
-}
-
-GLFWwindow *createAndConfigureWindow(int width, int height, const char *title) {
-  if (!glfwInit())
-    return nullptr;
-
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-  GLFWwindow *window = glfwCreateWindow(width, height, title, nullptr, nullptr);
-  if (!window)
-    return nullptr;
-
-  glfwMakeContextCurrent(window);
-  glfwSwapInterval(1); // vsync
-
-  // Load GL functions
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    return nullptr;
-
-  return window;
-}
-
-void setupImGuiBackends(GLFWwindow *window) {
-  // GLFW backend
-  ImGui_ImplGlfw_InitForOpenGL(window, true);
-
-  // OpenGL3 backend (GLSL 130 core is the safest cross-platform default)
-  ImGui_ImplOpenGL3_Init("#version 130 core");
-}
-
-void renderImGui(const ImVec4 &clear_color, GLFWwindow *window) {
-  int width, height;
-  glfwGetFramebufferSize(window, &width, &height);
-  glViewport(0, 0, width, height);
-
-  const float clear_color_with_alpha[4] = {
-      clear_color.x * clear_color.w, clear_color.y * clear_color.w,
-      clear_color.z * clear_color.w, clear_color.w};
-
-  glClearColor(clear_color_with_alpha[0], clear_color_with_alpha[1],
-               clear_color_with_alpha[2], clear_color_with_alpha[3]);
-  glClear(GL_COLOR_BUFFER_BIT);
-
-  ImGui::Render();
-  ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-  glfwSwapBuffers(window);
-}
-
-void shutdownImGui() {
-  ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext();
 }
 
 bool CreateDeviceGL(GLFWwindow *&window, const char *title, int width,
@@ -144,13 +82,19 @@ bool CreateDeviceGL(GLFWwindow *&window, const char *title, int width,
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   GLFWmonitor *primary = glfwGetPrimaryMonitor();
-  const GLFWvidmode *mode = glfwGetVideoMode(primary);
+  const GLFWvidmode *mode = primary ? glfwGetVideoMode(primary) : nullptr;
+  if (!mode) {
+    glfwTerminate();
+    return false;
+  }
   glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 #ifdef __APPLE__
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
   // Create a windowed fullscreen (borderless) window
-  window = glfwCreateWindow(mode->width, mode->height, title, nullptr, nullptr);
+  const int windowWidth = width > 0 ? width : mode->width;
+  const int windowHeight = height > 0 ? height : mode->height;
+  window = glfwCreateWindow(windowWidth, windowHeight, title, nullptr, nullptr);
   if (!window) {
     glfwTerminate();
     return false;
@@ -161,8 +105,12 @@ bool CreateDeviceGL(GLFWwindow *&window, const char *title, int width,
   glfwSwapInterval(1); // Enable vsync
 
   // Load GL through GLAD
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+    glfwDestroyWindow(window);
+    window = nullptr;
+    glfwTerminate();
     return false;
+  }
 
   return true;
 }

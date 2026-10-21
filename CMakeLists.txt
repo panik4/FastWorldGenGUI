@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.15)
 
 project(FastWorldGenGUI VERSION 1.0 LANGUAGES CXX)
 
+if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    include(CTest)
+endif()
+
 # ------------------------------------------------------------
 # Language / standard
 # ------------------------------------------------------------

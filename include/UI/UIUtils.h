@@ -13,10 +13,6 @@ void freeTexture(GLuint *texture);
 bool getResourceView(const Fwg::Gfx::Image &image, GLuint *out_tex,
                      int *out_width, int *out_height);
 ImGuiIO &setupImGuiContextAndStyle();
-GLFWwindow *createAndConfigureWindow(int width, int height, const char *title);
-void setupImGuiBackends(GLFWwindow *window);
-void renderImGui(const ImVec4 &clear_color, GLFWwindow *window);
-void shutdownImGui();
 bool CreateDeviceGL(GLFWwindow *&window, const char *title, int width,
                     int height);
 void CleanupDeviceGL(GLFWwindow *&window);

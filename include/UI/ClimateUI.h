@@ -23,7 +23,7 @@ bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                        const Fwg::Gfx::Image &climateInput,
                        UIContext &uiContext);
 bool climateMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                           UIContext &uiContext);
+                    UIContext &uiContext);
 int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                         UIContext &uiContext);
 
@@ -36,7 +36,7 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                  UIContext &uiContext);
 int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                   UIContext &uiContext);
+                        UIContext &uiContext);
 int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                 UIContext &uiContext);
 int showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,

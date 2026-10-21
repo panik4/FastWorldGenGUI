@@ -181,5 +181,4 @@ public:
   }
 };
 
-
 } // namespace Fwg::UI

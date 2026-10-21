@@ -1,29 +1,45 @@
 #include "UI/FwgUI.h"
 #include <cmath>
+#include <stdexcept>
 
 namespace Fwg::UI {
 
 FwgUI::FwgUI() : landUI() {}
 
-void FwgUI::genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
-  {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
+Fwg::FastWorldGenerator &FwgUI::currentGenerator() {
+  return *standaloneGenerator;
+}
 
-    ImGui::BeginChild(
-        "GenericWrapper",
-        ImVec2(
-            ImGui::GetContentRegionAvail().x * 1.0f,
-            std::max<float>(ImGui::GetContentRegionAvail().y * 0.3f, 100.0f)),
-        false, ImGuiWindowFlags_None);
-    showGeneric(cfg, fwg);
-    ImGui::EndChild();
-    // Draw a frame around the child region
-    ImVec2 childMin = ImGui::GetItemRectMin();
-    ImVec2 childMax = ImGui::GetItemRectMax();
-    ImGui::GetWindowDrawList()->AddRect(
-        childMin, childMax, IM_COL32(50, 91, 120, 255), 0.0f, 0, 2.0f);
-    ImGui::PopStyleColor();
-  }
+std::string FwgUI::windowTitle() const { return "FastWorldGen 0.9.1"; }
+
+std::string FwgUI::frameTitle() const { return "FastWorldGen"; }
+
+void FwgUI::onWindowReady() {}
+
+void FwgUI::renderTopBar() {}
+
+void FwgUI::renderSettingsTabs(Fwg::Cfg &cfg) {
+  defaultTabs(cfg, currentGenerator());
+}
+
+void FwgUI::renderGenericContents(Fwg::Cfg &cfg) {
+  showGeneric(cfg, currentGenerator());
+}
+
+void FwgUI::renderGenericControls(Fwg::Cfg &cfg) {
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(30, 100, 144, 40));
+  ImGui::BeginChild(
+      "GenericWrapper",
+      ImVec2(ImGui::GetContentRegionAvail().x,
+             std::max<float>(ImGui::GetContentRegionAvail().y * 0.3f, 100.0f)),
+      false, ImGuiWindowFlags_None);
+  renderGenericContents(cfg);
+  ImGui::EndChild();
+  const auto childMin = ImGui::GetItemRectMin();
+  const auto childMax = ImGui::GetItemRectMax();
+  ImGui::GetWindowDrawList()->AddRect(
+      childMin, childMax, IM_COL32(50, 91, 120, 255), 0.0f, 0, 2.0f);
+  ImGui::PopStyleColor();
 }
 
 void FwgUI::logWrapper() {
@@ -33,7 +49,9 @@ void FwgUI::logWrapper() {
                            ImGui::GetContentRegionAvail().y * 1.0f),
                     false, ImGuiWindowFlags_None);
   {
-    ImGui::TextUnformatted(log->str().c_str());
+    const auto logSnapshot =
+        Fwg::Utils::Logging::Logger::logInstance.getFullLog();
+    ImGui::TextUnformatted(logSnapshot.c_str());
     if (!ImGui::IsWindowHovered()) {
       // scroll to bottom
       ImGui::SetScrollHereY(1.0f);
@@ -168,10 +186,6 @@ void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       Fwg::Cfg::Values().resourcePath);
   this->uiContext.helpContext.loadHelpImagesFromPath(
       Fwg::Cfg::Values().resourcePath);
-  Fwg::UI::Drawing::setClickOffsets(cfg.width, 1);
-  log = std::make_shared<std::stringstream>();
-  *log << Fwg::Utils::Logging::Logger::logInstance.getFullLog();
-  Fwg::Utils::Logging::Logger::logInstance.attachStream(log);
   fwg.configure(cfg);
   Fwg::UI::Heightmap::loadHeightmapConfigs(uiContext);
   initAllowedInput(cfg, fwg.climateData, cfg.terrainConfig.landformDefinitions);
@@ -184,19 +198,13 @@ void FwgUI::defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg) {
 }
 
 void FwgUI::computationRunningCheck() {
-  // Check if the computation is done
-  if (uiContext.asyncContext.computationRunning &&
-      uiContext.asyncContext.computationFutureBool.wait_for(
-          std::chrono::seconds(0)) == std::future_status::ready) {
-    uiContext.asyncContext.computationRunning = false;
-    uiContext.imageContext.resetTexture();
-  }
-
-  if (uiContext.asyncContext.computationRunning) {
-    uiContext.asyncContext.computationStarted = false;
-    ImGui::Text("Working, please be patient");
+  if (uiContext.asyncContext.busy()) {
+    ImGui::TextUnformatted("Background task is running. Please wait.");
+    if (closingAfterTask)
+      ImGui::TextUnformatted("Finishing task before closing");
   } else {
-    ImGui::Text("Ready!");
+    const auto &message = uiContext.asyncContext.statusMessage();
+    ImGui::TextUnformatted(message.empty() ? "Ready!" : message.c_str());
   }
 }
 
@@ -206,128 +214,241 @@ void APIENTRY DebugCallback(GLenum source, GLenum type, GLuint id,
   fprintf(stderr, "GL ERROR: %s\n", message);
 }
 
-int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
-  Fwg::Utils::Logging::logLine("Starting GUI init");
+bool AsyncContext::dispatchPending() {
+  if (!pendingTask || worker.valid())
+    return false;
+  auto task = std::move(pendingTask);
+  pendingTask = {};
+  try {
+    worker = std::async(std::launch::async, std::move(task));
+  } catch (const std::exception &e) {
+    finish({TaskResult::Outcome::Failure, e.what()});
+    return false;
+  } catch (...) {
+    finish({TaskResult::Outcome::Failure, "Could not start the task"});
+    return false;
+  }
+  return true;
+}
 
-  // Initialize GLFW, window, GLAD, ImGui
-  if (!glfwInit()) {
-    Fwg::Utils::Logging::logLine("Starting GUI init FAILED");
+bool AsyncContext::pollCompletion() {
+  if (!worker.valid() ||
+      worker.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    return false;
+
+  TaskResult result;
+  try {
+    result = worker.get();
+  } catch (const std::exception &e) {
+    result = {TaskResult::Outcome::Failure, e.what()};
+  } catch (...) {
+    result = {TaskResult::Outcome::Failure, "Unknown task exception"};
+  }
+  finish(std::move(result));
+  return true;
+}
+
+void AsyncContext::finish(TaskResult result) {
+  // This is only called by the UI thread, including launch failures.
+  auto onComplete = std::move(completion);
+  completion = {};
+  if (onComplete) {
+    try {
+      onComplete(result.outcome);
+    } catch (const std::exception &e) {
+      result.outcome = TaskResult::Outcome::Failure;
+      result.message = e.what();
+    } catch (...) {
+      result.outcome = TaskResult::Outcome::Failure;
+      result.message = "Unknown completion exception";
+    }
+  }
+
+  if (result.outcome == TaskResult::Outcome::Failure) {
+    lastMessage = "Background task failed: " + result.message;
+    Fwg::Utils::Logging::logLine(lastMessage);
+  } else {
+    lastMessage =
+        result.message.empty() ? "Background task completed" : result.message;
+  }
+  computationRunning = false;
+}
+
+void AsyncContext::waitForCompletion() {
+  if (pendingTask)
+    dispatchPending();
+  if (worker.valid())
+    worker.wait();
+  pollCompletion();
+}
+
+int FwgUI::shiny(Fwg::FastWorldGenerator &fwg) {
+  standaloneGenerator = &fwg;
+  return runApplication();
+}
+
+int FwgUI::runApplication() {
+  if (!Fwg::UI::Utils::CreateDeviceGL(window, windowTitle().c_str(), 0, 0)) {
+    Fwg::Utils::Logging::logLine("Could not initialize the OpenGL window");
     return -1;
   }
 
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  bool contextCreated = false;
+  bool glfwBackendReady = false;
+  bool rendererBackendReady = false;
+  int result = 0;
+  try {
+    Fwg::UI::Utils::setupImGuiContextAndStyle();
+    contextCreated = true;
+    onWindowReady();
+    glfwSetWindowUserPointer(window, this);
+    glfwSetDropCallback(
+        window, [](GLFWwindow *win, int count, const char **paths) {
+          auto *ui = static_cast<FwgUI *>(glfwGetWindowUserPointer(win));
+          if (!ui || ui->uiContext.asyncContext.busy() || count <= 0)
+            return;
+          ui->uiContext.draggedFile = paths[count - 1];
+          ui->uiContext.triggeredDrag = true;
+        });
 
-  window = glfwCreateWindow(1280, 720, "FastWorldGen 0.9.1", nullptr, nullptr);
-  glfwMakeContextCurrent(window);
-  glfwSwapInterval(1); // vsync
+    if (!ImGui_ImplGlfw_InitForOpenGL(window, true))
+      throw std::runtime_error("Could not initialize the ImGui GLFW backend");
+    glfwBackendReady = true;
+    if (!ImGui_ImplOpenGL3_Init("#version 130"))
+      throw std::runtime_error("Could not initialize the ImGui OpenGL backend");
+    rendererBackendReady = true;
 
-  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-    return -1;
+    auto &cfg = Fwg::Cfg::Values();
+    init(cfg, currentGenerator());
+    auto &io = ImGui::GetIO();
+    result = runLoop(io);
+  } catch (const std::exception &e) {
+    Fwg::Utils::Logging::logLine("Error in GUI: ", e.what());
+    result = -1;
+  } catch (...) {
+    Fwg::Utils::Logging::logLine("Unknown error in GUI");
+    result = -1;
+  }
 
-  Fwg::UI::Utils::setupImGuiContextAndStyle();
-  ImGui_ImplGlfw_InitForOpenGL(window, true);
-  ImGui_ImplOpenGL3_Init("#version 130");
+  if (uiContext.asyncContext.busy())
+    uiContext.asyncContext.waitForCompletion();
+  currentGenerator().setImageProgress({});
+  uiContext.generationPreview.clear();
+  if (rendererBackendReady)
+    ImGui_ImplOpenGL3_Shutdown();
+  if (glfwBackendReady)
+    ImGui_ImplGlfw_Shutdown();
+  if (contextCreated)
+    ImGui::DestroyContext();
+  Fwg::UI::Utils::CleanupDeviceGL(window);
+  return result;
+}
 
-  glfwSetWindowUserPointer(window, this);
-  glfwSetDropCallback(
-      window, [](GLFWwindow *win, int count, const char **paths) {
-        auto *fwgui = reinterpret_cast<FwgUI *>(glfwGetWindowUserPointer(win));
-        fwgui->uiContext.triggeredDrag = (count > 0);
-        fwgui->uiContext.draggedFile =
-            (count > 0) ? std::string(paths[count - 1]) : "";
-      });
-  // glEnable(GL_DEBUG_OUTPUT);
-  // glDebugMessageCallback(DebugCallback, nullptr);
-
+int FwgUI::runLoop(ImGuiIO &io) {
   auto &cfg = Fwg::Cfg::Values();
-  auto &io = Fwg::UI::Utils::setupImGuiContextAndStyle();
-  init(cfg, fwg);
+  auto lastPreview = std::chrono::steady_clock::now();
+  closingAfterTask = false;
 
-  while (!glfwWindowShouldClose(window)) {
-    uiContext.triggeredDrag = false;
+  while (true) {
+    if (!uiContext.asyncContext.busy())
+      uiContext.triggeredDrag = false;
     glfwPollEvents();
+
+    if (uiContext.asyncContext.pollCompletion()) {
+      currentGenerator().setImageProgress({});
+      uiContext.generationPreview.clear();
+      uiContext.imageContext.resetTexture();
+    }
+
+    if (glfwWindowShouldClose(window)) {
+      if (uiContext.asyncContext.busy()) {
+        closingAfterTask = true;
+        glfwSetWindowShouldClose(window, GLFW_FALSE);
+      } else {
+        break;
+      }
+    }
+    if (closingAfterTask && !uiContext.asyncContext.busy())
+      break;
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-
-    // Apply automatic UI scaling based on window resolution
     applyAutoUIScale();
 
-    {
-      ImGui::SetNextWindowPos({0, 0});
-      ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y});
-      ImGui::Begin("FastWorldGen");
-      // observer checks for "Error"
-
-      ImGui::BeginChild("LeftContent",
-                        ImVec2(ImGui::GetContentRegionAvail().x * 0.4f,
-                               ImGui::GetContentRegionAvail().y * 1.0f),
-                        false);
-      {
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(78, 90, 204, 40));
-        // Create a child window for the left content
-        ImGui::BeginChild("SettingsContent",
-                          ImVec2(ImGui::GetContentRegionAvail().x * 1.0f,
-                                 ImGui::GetContentRegionAvail().y * 0.8f),
-                          false);
-        {
-          ImGui::SeparatorText("Different Steps of the generation, usually go "
-                               "from left to right");
-
-          if (UI::Elements::BeginMainTabBar("Steps")) {
-            // Disable all inputs if computation is running
-            if (uiContext.asyncContext.computationRunning) {
-              ImGui::BeginDisabled();
-            }
-
-            defaultTabs(cfg, fwg);
-            // Re-enable inputs if computation is running
-            if (uiContext.asyncContext.computationRunning &&
-                !uiContext.asyncContext.computationStarted) {
-              ImGui::EndDisabled();
-            }
-            computationRunningCheck();
-
-            UI::Elements::EndMainTabBar();
-          }
-
-          ImGui::PopStyleColor();
-          ImGui::EndChild();
-
-          // Draw a frame around the child region
-          ImVec2 childMin = ImGui::GetItemRectMin();
-          ImVec2 childMax = ImGui::GetItemRectMax();
-          ImGui::GetWindowDrawList()->AddRect(
-              childMin, childMax, IM_COL32(100, 90, 180, 255), 0.0f, 0, 2.0f);
-        }
-        genericWrapper(cfg, fwg);
-        logWrapper();
-      }
-      ImGui::SameLine();
-      imageWrapper(io);
-
-      ImGui::End();
+    const auto now = std::chrono::steady_clock::now();
+    if (uiContext.asyncContext.busy() &&
+        now - lastPreview >= std::chrono::milliseconds(50)) {
+      Gfx::Image snapshot;
+      if (uiContext.generationPreview.consume(snapshot))
+        uiContext.imageContext.updateImage(0, snapshot);
+      lastPreview = now;
     }
 
-    // Render
+    ImGui::SetNextWindowPos({0, 0});
+    ImGui::SetNextWindowSize({io.DisplaySize.x, io.DisplaySize.y});
+    ImGui::Begin(frameTitle().c_str());
+    renderTopBar();
+    ImGui::BeginChild("LeftContent",
+                      ImVec2(ImGui::GetContentRegionAvail().x *
+                                 uiContext.layoutContext.leftColumnWidth,
+                             ImGui::GetContentRegionAvail().y),
+                      false);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(78, 90, 204, 40));
+    ImGui::BeginChild("SettingsContent",
+                      ImVec2(ImGui::GetContentRegionAvail().x,
+                             ImGui::GetContentRegionAvail().y * 0.8f),
+                      false);
+    ImGui::SeparatorText("Different Steps of the generation, usually go "
+                         "from left to right");
+    // Do not submit an empty tab bar while busy: ImGui would forget its tabs.
+    if (!uiContext.asyncContext.busy() &&
+        Fwg::UI::Elements::BeginMainTabBar("Steps")) {
+      renderSettingsTabs(cfg);
+      Fwg::UI::Elements::EndMainTabBar();
+    }
+    ImGui::PopStyleColor();
+    ImGui::EndChild();
+    const ImVec2 childMin = ImGui::GetItemRectMin();
+    const ImVec2 childMax = ImGui::GetItemRectMax();
+    ImGui::GetWindowDrawList()->AddRect(
+        childMin, childMax, IM_COL32(100, 90, 180, 255), 0.0f, 0, 2.0f);
+
+    computationRunningCheck();
+    if (!uiContext.asyncContext.busy())
+      renderGenericControls(cfg);
+    logWrapper();
+    ImGui::EndChild();
+    ImGui::SameLine();
+    if (uiContext.asyncContext.busy())
+      uiContext.drawContext.clickEvents = {};
+    imageWrapper(io);
+    ImGui::End();
+
+    if (uiContext.helpContext.showExtendedHelp)
+      uiContext.helpContext.showAdvancedTextBox();
+
     ImGui::Render();
-    int display_w, display_h;
-    glfwGetFramebufferSize(window, &display_w, &display_h);
-    glViewport(0, 0, display_w, display_h);
+    int displayWidth = 0;
+    int displayHeight = 0;
+    glfwGetFramebufferSize(window, &displayWidth, &displayHeight);
+    glViewport(0, 0, displayWidth, displayHeight);
     glClearColor(0.45f, 0.55f, 0.60f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
     glfwSwapBuffers(window);
-  }
 
-  ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext();
-  Fwg::UI::Utils::CleanupDeviceGL(window);
+    if (uiContext.asyncContext.hasPendingTask()) {
+      uiContext.generationPreview.clear();
+      currentGenerator().setImageProgress(
+          [this](const Gfx::Image &image, std::span<const int> pixels) {
+            uiContext.generationPreview.publish(image, pixels);
+          });
+      uiContext.asyncContext.dispatchPending();
+      if (!uiContext.asyncContext.busy())
+        currentGenerator().setImageProgress({});
+    }
+  }
   return 0;
 }
 
@@ -409,12 +530,10 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     cfg.terrainConfig.allowHeightmapModification = true;
 
     // run the generation async
-    uiContext.asyncContext.computationFutureBool =
-        uiContext.asyncContext.runAsyncInitialDisable([&fwg, &cfg, this]() {
-          fwg.generateWorld();
-          uiContext.imageContext.resetTexture();
+    uiContext.asyncContext.runAsync(
+        [&fwg]() { return fwg.generateWorld(); },
+        [this](TaskResult::Outcome) {
           uiContext.generationContext.modifiedAreas = true;
-          return true;
         });
   }
   ImGui::Separator();
@@ -423,7 +542,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     auto configPath = path + ".config";
     try {
       fwg.save(path);
-      if (cfg.saveSnapshot(configPath)) {
+      if (fwg.saveConfigurationSnapshot(configPath, cfg)) {
         Fwg::Utils::Logging::logLine("Project and config saved to ", path,
                                      " and ", configPath);
       } else {
@@ -440,8 +559,9 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     auto path = cfg.mapsPath + "fwg.data";
     auto configPath = path + ".config";
     try {
-      if (cfg.loadSnapshot(configPath)) {
+      if (fwg.loadConfigurationSnapshot(configPath, cfg)) {
         fwg.load(path);
+        uiContext.generationContext.modifiedAreas = true;
         initAllowedInput(cfg, fwg.climateData,
                          cfg.terrainConfig.landformDefinitions);
         uiContext.imageContext.resetTexture();
@@ -530,7 +650,8 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
         if (grid.AddInputDouble("Latitude High", &cfg.latHigh, -90.0, 90.0) |
             grid.AddInputDouble("Latitude Low", &cfg.latLow, -90.0, 90.0) |
-            grid.AddInputDouble("River Amount", &cfg.riverFactor, 0.0, 10.0) |
+            grid.AddInputDouble("River Amount", &cfg.riverConfig.riverFactor,
+                                0.0, 10.0) |
             grid.AddInputDouble("River Humidity",
                                 &cfg.climateConfig.riverHumidityFactor, 0.0,
                                 10.0) |
@@ -539,8 +660,9 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                                 10.0)) {
           uiContext.generationContext.redoHumidity = true;
         }
-        grid.AddCheckbox("Carve River Canyons", &cfg.riverCanyonEnabled);
-        grid.AddInputInt("Canyon Range (pixels)", &cfg.riverCanyonRange, 0, 64);
+        grid.AddCheckbox("Carve River Canyons", &cfg.riverConfig.canyonEnabled);
+        grid.AddInputInt("Canyon Range (pixels)", &cfg.riverConfig.canyonRange,
+                         0, 64);
       }
 
       ImGui::Spacing();
@@ -553,16 +675,11 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
              UI::PrerequisiteChecker::landMask(fwg.terrainData)});
         if (guard.ready() && UI::Elements::AutomationStepButton(
                                  "Generate whole climate automatically")) {
-          uiContext.asyncContext.computationFutureBool =
-              uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
-                fwg.genTemperatures(cfg);
-                fwg.genHumidity(cfg);
-                fwg.genRivers(cfg);
-                fwg.genClimate(cfg);
-                fwg.genWorldMap(cfg);
-                uiContext.imageContext.resetTexture();
-                return true;
-              });
+          uiContext.asyncContext.runAsync([&fwg, &cfg]() {
+            return fwg.genTemperatures(cfg) && fwg.genHumidity(cfg) &&
+                   fwg.genRivers(cfg) && fwg.genClimate(cfg) &&
+                   fwg.genWorldMap(cfg);
+          });
         }
       }
     }
@@ -611,16 +728,14 @@ int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
       if (guard.ready() && UI::Elements::AutomationStepButton(
                                "Generate all areas automatically")) {
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg, this]() {
+        uiContext.asyncContext.runAsync(
+            [&fwg, &cfg]() {
+              return fwg.genHabitability(cfg) && fwg.genSuperSegments(cfg) &&
+                     fwg.genSegments(cfg) && fwg.genProvinces(cfg) &&
+                     fwg.genContinents(cfg);
+            },
+            [this](TaskResult::Outcome) {
               uiContext.generationContext.modifiedAreas = true;
-              fwg.genHabitability(cfg);
-              fwg.genSuperSegments(cfg);
-              fwg.genSegments(cfg);
-              fwg.genProvinces(cfg);
-              fwg.genContinents(cfg);
-              uiContext.imageContext.resetTexture();
-              return true;
             });
       }
     }

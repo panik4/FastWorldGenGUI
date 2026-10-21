@@ -586,8 +586,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     if (uiContext.tabSwitchEvent()) {
 
       if (fwg.terrainData.detailedHeightMap.size()) {
-        auto heightmap =
-            Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap);
+        auto heightmap = Fwg::Gfx::displayHeightMap(
+            fwg.terrainData.detailedHeightMap, cfg.visualizationContext());
         uiContext.imageContext.updateImage(0, heightmap);
         uiContext.imageContext.updateImage(1, heightmap);
 
@@ -607,7 +607,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         } else {
           if (fwg.terrainData.landMask.size()) {
             uiContext.imageContext.updateImage(
-                1, Fwg::Gfx::topographyMap(fwg.terrainData.altitudes));
+                1, Fwg::Gfx::topographyMap(fwg.terrainData.altitudes, cfg.width,
+                                           cfg.height));
           } else {
             uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
           }
@@ -685,20 +686,28 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
       grid.AddText("Sealevel", "%d", cfg.terrainConfig.seaLevel);
 
-      if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::HEIGHTMAP) {
-        grid.AddSliderFloat("Target Land %", &cfg.terrainConfig.landPercentage, 0.0f, 1.0f);
-        grid.AddInputInt("Height Adjustments", &cfg.terrainConfig.heightAdjustments, 0, 100);
+      if (cfg.terrainConfig.landInputMode ==
+          Fwg::Terrain::InputMode::HEIGHTMAP) {
+        grid.AddSliderFloat("Target Land %", &cfg.terrainConfig.landPercentage,
+                            0.0f, 1.0f);
+        grid.AddInputInt("Height Adjustments",
+                         &cfg.terrainConfig.heightAdjustments, 0, 100);
 
       } else {
-        grid.AddText("Land Percentage", "%.2f%%", cfg.terrainConfig.landPercentage * 100.0f);
+        grid.AddText("Land Percentage", "%.2f%%",
+                     cfg.terrainConfig.landPercentage * 100.0f);
       }
-      grid.AddInputFloat("Coastal Distance", &cfg.terrainConfig.heightmap.layerApplicationFactor, 0.0f,
-                         10.0f);
-      grid.AddInputDouble("Lake Size Factor", &cfg.terrainConfig.lakeMaxShare, 0.0, 1.0);
-      if (grid.AddInputInt("Max Land Height", &cfg.terrainConfig.heightmap.maxLandHeight,
+      grid.AddInputFloat("Coastal Distance",
+                         &cfg.terrainConfig.heightmap.layerApplicationFactor,
+                         0.0f, 10.0f);
+      grid.AddInputDouble("Lake Size Factor", &cfg.terrainConfig.lakeMaxShare,
+                          0.0, 1.0);
+      if (grid.AddInputInt("Max Land Height",
+                           &cfg.terrainConfig.heightmap.maxLandHeight,
                            cfg.terrainConfig.seaLevel + 1, 255)) {
         cfg.terrainConfig.heightmap.maxLandHeight =
-            std::clamp(cfg.terrainConfig.heightmap.maxLandHeight, cfg.terrainConfig.seaLevel + 1, 255);
+            std::clamp(cfg.terrainConfig.heightmap.maxLandHeight,
+                       cfg.terrainConfig.seaLevel + 1, 255);
       }
     }
 
@@ -713,12 +722,17 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     {
       UI::Elements::GridLayout grid(2, 200.0f, 12.0f);
 
-      grid.AddSliderFloat("Heightmap Frequency",
-                          &cfg.terrainConfig.heightmap.heightmapFrequencyModifier, 0.1f, 10.0f);
-      grid.AddSliderFloat("Edge Fade Width Factor",
-                          &cfg.terrainConfig.heightmap.globalEdgeFadeWidthModifier, 0.0f, 10.0f);
-      grid.AddSliderFloat("Edge Fade Height Factor",
-                          &cfg.terrainConfig.heightmap.globalEdgeFadeHeightModifier, 0.0f, 10.0f);
+      grid.AddSliderFloat(
+          "Heightmap Frequency",
+          &cfg.terrainConfig.heightmap.heightmapFrequencyModifier, 0.1f, 10.0f);
+      grid.AddSliderFloat(
+          "Edge Fade Width Factor",
+          &cfg.terrainConfig.heightmap.globalEdgeFadeWidthModifier, 0.0f,
+          10.0f);
+      grid.AddSliderFloat(
+          "Edge Fade Height Factor",
+          &cfg.terrainConfig.heightmap.globalEdgeFadeHeightModifier, 0.0f,
+          10.0f);
     }
 
     ImGui::Spacing();
@@ -836,8 +850,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           true, ImGuiWindowFlags_None);
 
         if (selectedLayer < currentLayers->size()) {
-          Fwg::Terrain::LayerConfig &layer =
-              (*currentLayers)[selectedLayer];
+          Fwg::Terrain::LayerConfig &layer = (*currentLayers)[selectedLayer];
 
           ImGui::Text("Editing %s Layer %d", layerTypeName, selectedLayer);
           ImGui::Separator();
@@ -959,13 +972,9 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           cfg.reRandomize();
         }
         uiContext.generationContext.loadedHeightmap = false;
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &uiContext]() {
-              fwg.genHeight();
-              uiContext.imageContext.resetTexture();
-              updateLayer = true;
-              return true;
-            });
+        uiContext.asyncContext.runAsync(
+            [&fwg]() { return fwg.genHeight(); },
+            [](TaskResult::Outcome) { updateLayer = true; });
       }
       std::string buttonLabel = uiContext.generationContext.loadedHeightmap
                                     ? "Derive Data from Input Heightmap"
@@ -979,26 +988,17 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           cfg.randomSeed = true;
           cfg.reRandomize();
         }
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &uiContext]() {
-              fwg.genLand();
-              updateLayer = true;
-              uiContext.imageContext.resetTexture();
-              return true;
-            });
+        uiContext.asyncContext.runAsync(
+            [&fwg]() { return fwg.genLand(); },
+            [](TaskResult::Outcome) { updateLayer = true; });
       }
       if (UI::Elements::ImportantStepButton(
               "Generate Complete Heightmap from new seed", ImVec2(350, 0))) {
         cfg.randomSeed = true;
         cfg.reRandomize();
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &uiContext, &cfg]() {
-              fwg.genHeight();
-              fwg.genLand();
-              uiContext.imageContext.resetTexture();
-              updateLayer = true;
-              return true;
-            });
+        uiContext.asyncContext.runAsync(
+            [&fwg]() { return fwg.genHeight() && fwg.genLand(); },
+            [](TaskResult::Outcome) { updateLayer = true; });
       }
       break;
     }
@@ -1017,12 +1017,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       ImGui::SameLine();
 
       if (UI::Elements::Button("Apply Detail Layers", false, ImVec2(250, 0))) {
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &uiContext]() {
-              fwg.genLand();
-              uiContext.imageContext.resetTexture();
-              return true;
-            });
+        uiContext.asyncContext.runAsync([&fwg]() { return fwg.genLand(); });
       }
       break;
     }
@@ -1055,17 +1050,19 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           cfg.randomSeed = true;
           cfg.reRandomize();
         }
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
+        uiContext.asyncContext.runAsync(
+            [&fwg, &cfg]() {
               if (fwg.genHeightFromInput(
                       cfg, cfg.mapsPath + "classifiedLandInput.png",
                       cfg.terrainConfig.landInputMode)) {
-                fwg.genLand();
+                if (!fwg.genLand())
+                  return false;
+              } else {
+                return false;
               }
-              updateLayer = true;
-              uiContext.imageContext.resetTexture();
               return true;
-            });
+            },
+            [](TaskResult::Outcome) { updateLayer = true; });
       }
       break;
     }
@@ -1077,15 +1074,16 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           cfg.randomSeed = true;
           cfg.reRandomize();
         }
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
-              fwg.genHeightFromInput(cfg, cfg.mapsPath + "landmaskInput.png",
-                                     cfg.terrainConfig.landInputMode);
-              fwg.genLand();
-              updateLayer = true;
-              uiContext.imageContext.resetTexture();
+        uiContext.asyncContext.runAsync(
+            [&fwg, &cfg]() {
+              if (!fwg.genHeightFromInput(cfg,
+                                          cfg.mapsPath + "landmaskInput.png",
+                                          cfg.terrainConfig.landInputMode) ||
+                  !fwg.genLand())
+                return false;
               return true;
-            });
+            },
+            [](TaskResult::Outcome) { updateLayer = true; });
       }
       break;
     }
@@ -1098,8 +1096,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     if (uiContext.triggeredDrag) {
       uiContext.triggeredDrag = false;
       cfg.terrainConfig.allowHeightmapModification = false;
-      fwg.loadHeight(
-          cfg, IO::Reader::readHeightmapImage(uiContext.draggedFile, cfg));
+      fwg.loadHeight(cfg, IO::Reader::readHeightmapImage(
+                              uiContext.draggedFile, cfg.imageReadContext()));
       uiContext.imageContext.resetTexture();
     }
 
@@ -1113,9 +1111,19 @@ int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Normalmap")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.updateImage(
-          0, Fwg::Gfx::displaySobelMap(fwg.terrainData.sobelData));
+          0,
+          cfg.processingArea > 0 && fwg.terrainData.sobelData.size() ==
+                                        static_cast<size_t>(cfg.processingArea)
+              ? Fwg::Gfx::displaySobelMap(fwg.terrainData.sobelData,
+                                          cfg.visualizationContext())
+              : Fwg::Gfx::Image());
       uiContext.imageContext.updateImage(
-          1, Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap));
+          1,
+          cfg.processingArea > 0 && fwg.terrainData.detailedHeightMap.size() ==
+                                        static_cast<size_t>(cfg.processingArea)
+              ? Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap,
+                                           cfg.visualizationContext())
+              : Fwg::Gfx::Image());
     }
     uiContext.helpContext.showHelpTextBox("Normalmap");
 
@@ -1124,7 +1132,8 @@ int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     {
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
-      grid.AddInputDouble("Sobel Factor", &cfg.sobelFactor, 0.01, 10.0);
+      grid.AddInputDouble("Sobel Factor", &cfg.terrainConfig.sobelFactor, 0.01,
+                          10.0);
     }
 
     ImGui::Spacing();
@@ -1134,26 +1143,18 @@ int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     if (guard.ready()) {
       if (UI::Elements::ImportantStepButton("Generate Normalmap",
                                             ImVec2(200, 0))) {
-        uiContext.asyncContext.computationFutureBool =
-            uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
-              fwg.genSobelMap(cfg);
-              uiContext.imageContext.resetTexture(0);
-              return true;
-            });
+        uiContext.asyncContext.runAsync(
+            [&fwg, &cfg]() { return fwg.genSobelMap(cfg); });
       }
     }
 
     if (uiContext.triggeredDrag) {
       uiContext.triggeredDrag = false;
-      auto heightMap =
-          IO::Reader::readHeightmapImage(uiContext.draggedFile, cfg);
+      auto heightMap = IO::Reader::readHeightmapImage(uiContext.draggedFile,
+                                                      cfg.imageReadContext());
       fwg.loadHeight(cfg, heightMap);
-      uiContext.asyncContext.computationFutureBool =
-          uiContext.asyncContext.runAsync([&fwg, &cfg, &uiContext]() {
-            fwg.genSobelMap(cfg);
-            uiContext.imageContext.resetTexture();
-            return true;
-          });
+      uiContext.asyncContext.runAsync(
+          [&fwg, &cfg]() { return fwg.genSobelMap(cfg); });
     }
 
     ImGui::EndTabItem();

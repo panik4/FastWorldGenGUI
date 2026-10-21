@@ -8,7 +8,6 @@
 #include "UI/PreRequisites.h"
 #include "UI/UIContext.h"
 #include "UI/UIElements.h"
-#include <atomic>
 #include <functional>
 #include <future>
 #include <string>
@@ -22,10 +21,11 @@ class FwgUI {
 
 protected:
   GLFWwindow *window = nullptr;
-  std::shared_ptr<std::stringstream> log;
+  Fwg::FastWorldGenerator *standaloneGenerator = nullptr;
   Fwg::UI::UIContext uiContext;
   Fwg::UI::LandUI landUI;
   float uiScaleMultiplier = 1.0f;
+  bool closingAfterTask = false;
 
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiContext.imageContext.activeImages[0].size() &&
@@ -42,6 +42,14 @@ protected:
       std::vector<Terrain::LandformDefinition> &landformDefinitions);
 
   virtual int showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+  virtual Fwg::FastWorldGenerator &currentGenerator();
+  virtual std::string windowTitle() const;
+  virtual std::string frameTitle() const;
+  virtual void onWindowReady();
+  virtual void renderTopBar();
+  virtual void renderSettingsTabs(Fwg::Cfg &cfg);
+  void renderGenericControls(Fwg::Cfg &cfg);
+  virtual void renderGenericContents(Fwg::Cfg &cfg);
   int showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   int showFwgConfigure(Fwg::Cfg &cfg);
 
@@ -50,30 +58,31 @@ protected:
   int showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 
 protected:
-  void genericWrapper(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void logWrapper();
   void imageWrapper(ImGuiIO &io);
   void applyAutoUIScale();
   void init(Cfg &cfg, Fwg::FastWorldGenerator &fwg);
   void defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg);
   void computationRunningCheck();
+  int runApplication();
+  // Standalone frontends may override this, keeping task polling and dispatch
+  // on the UI thread.
+  virtual int runLoop(ImGuiIO &io);
 
   // Helper functions for scaled UI elements
-  inline float scaled(float value) const {
-    return value * uiContext.layoutContext.uiScale;
-  }
+  inline float scaled(float value) const { return uiContext.scaled(value); }
 
-  inline ImVec2 scaled(const ImVec2& vec) const {
-    return ImVec2(vec.x * uiContext.layoutContext.uiScale, 
-                  vec.y * uiContext.layoutContext.uiScale);
+  inline ImVec2 scaled(const ImVec2 &vec) const {
+    return uiContext.scaled(vec);
   }
 
   inline void PushItemWidthScaled(float width) {
-    ImGui::PushItemWidth(width * uiContext.layoutContext.uiScale);
+    ImGui::PushItemWidth(scaled(width));
   }
 
 public:
   FwgUI();
-  int shiny(Fwg::FastWorldGenerator &fwg);
+  virtual ~FwgUI() = default;
+  virtual int shiny(Fwg::FastWorldGenerator &fwg);
 };
 } // namespace Fwg::UI

@@ -1,9 +1,7 @@
 #pragma once
 #include "FastWorldGenerator.h"
-#include "UI/DrawUtils.h"
+#include "UI/UIContext.h"
 #include "UI/UIUtils.h"
-#include "backends/imgui_impl_dx11.h"
-#include "backends/imgui_impl_win32.h"
 #include "imgui.h"
 #include <string>
 #include <vector>
@@ -39,10 +37,8 @@ public:
                           UI::UIContext &uiContext);
   Fwg::Utils::ColourTMap<ElevationInput> landInputColours;
   Fwg::Utils::ColourTMap<Fwg::Terrain::LandformDefinition> allowedLandInputs;
-  void triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
+  bool triggeredLandInput(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                           const std::string &draggedFile,
-                          const Fwg::Terrain::InputMode &inputMode,
-                          UI::UIContext &uiContext);
-  void draw(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg, UI::UIContext &uiContext);
+                          const Fwg::Terrain::InputMode &inputMode);
 };
 } // namespace Fwg::UI

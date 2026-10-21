@@ -218,7 +218,8 @@ bool GridLayout::AddInputText(const char *label, std::string *value) {
   ImGui::PopItemWidth();
   ImGui::SameLine();
   ImGui::SetNextItemWidth(inputWidth);
-  const auto changed = ImGui::InputText((std::string("##") + label).c_str(), value);
+  const auto changed =
+      ImGui::InputText((std::string("##") + label).c_str(), value);
   ImGui::EndGroup();
   EndCell();
   return changed;

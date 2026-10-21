@@ -3,10 +3,19 @@
 #define GLFW_INCLUDE_NONE
 #include "FastWorldGenerator.h"
 #include "GLFW/glfw3.h"
-#include "UI/UIUtils.h"
 #include "UI/UIElements.h"
+#include "UI/UIUtils.h"
 #include "utils/Cfg.h"
+#include <chrono>
+#include <exception>
+#include <functional>
+#include <future>
 #include <map>
+#include <mutex>
+#include <queue>
+#include <span>
+#include <type_traits>
+#include <utility>
 
 namespace Fwg::UI {
 namespace Drawing {
@@ -35,10 +44,10 @@ struct ImageContext {
   GLuint secondaryTexture = 0;
 
   float zoom = 1.0f;
-  bool updateTexture1;
-  bool updateTexture2;
-  int textureWidth;
-  int textureHeight;
+  bool updateTexture1 = false;
+  bool updateTexture2 = false;
+  int textureWidth = 0;
+  int textureHeight = 0;
 
   bool isPrimaryTextureActive() { return primaryTexture != 0; }
   bool isSecondaryTextureActive() { return secondaryTexture != 0; }
@@ -67,7 +76,7 @@ struct ImageContext {
 
   void updateImage(int index, const Fwg::Gfx::Image &image) {
     GLuint &texture = (index == 0) ? primaryTexture : secondaryTexture;
-    bool &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
+    auto &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
 
     // Free existing GL texture
     Fwg::UI::Utils::freeTexture(&texture);
@@ -303,6 +312,7 @@ struct HelpContext {
       ImGui::EndGroup();
 
       ImGui::Separator();
+      ImGui::EndChild();
       ImGui::End();            // Ends the "Extended Help" window
       ImGui::PopStyleColor(2); // WindowBg + Border
       ImGui::PopStyleVar();    // Border size
@@ -310,23 +320,101 @@ struct HelpContext {
   }
 };
 
-struct AsyncContext {
-  std::atomic<bool> computationRunning;
-  std::atomic<bool> computationStarted;
-  std::future<bool> computationFutureBool;
+struct TaskResult {
+  enum class Outcome { Success, Failure } outcome = Outcome::Success;
+  std::string message;
+};
 
-  // Function wrapper to run any function asynchronously
-  template <typename Func, typename... Args>
-  auto runAsync(Func func, Args &...args) {
-    computationStarted = true;
-    computationRunning = true;
-    return std::async(std::launch::async, func, std::ref(args)...);
+// Workers publish owned pixels into this buffer. The UI only uploads copies.
+class GenerationPreview {
+  std::mutex mutex;
+  Gfx::Image image;
+  bool dirty = false;
+
+public:
+  void publish(const Gfx::Image &source, std::span<const int> pixels) {
+    std::lock_guard guard(mutex);
+    if (pixels.empty()) {
+      image = source;
+    } else {
+      if (image.width() != source.width() || image.height() != source.height())
+        image = Gfx::Image(source.width(), source.height(), 24);
+      for (const int pixel : pixels)
+        image.setColourAtIndex(pixel, source[pixel]);
+    }
+    dirty = true;
   }
-  template <typename Func, typename... Args>
-  auto runAsyncInitialDisable(Func func, Args &...args) {
-    computationRunning = true;
-    return std::async(std::launch::async, func, std::ref(args)...);
+
+  bool consume(Gfx::Image &snapshot) {
+    std::lock_guard guard(mutex);
+    if (!dirty)
+      return false;
+    snapshot = image;
+    dirty = false;
+    return true;
   }
+
+  void clear() {
+    std::lock_guard guard(mutex);
+    image.clear();
+    dirty = false;
+  }
+};
+
+// Scheduling, polling, and completion belong to the UI thread. Only the queued
+// task runs on a worker thread.
+class AsyncContext {
+  std::future<TaskResult> worker;
+  std::function<TaskResult()> pendingTask;
+  std::function<void(TaskResult::Outcome)> completion;
+  bool computationRunning = false;
+  std::string lastMessage;
+
+  void finish(TaskResult result);
+
+  template <typename Func> static TaskResult invokeTask(Func &func) {
+    try {
+      using Result = std::invoke_result_t<Func &>;
+      static_assert(std::is_same_v<Result, bool> ||
+                        std::is_same_v<Result, TaskResult>,
+                    "Background tasks must return bool or TaskResult");
+      if constexpr (std::is_same_v<Result, bool>) {
+        if (std::invoke(func))
+          return {};
+        return {TaskResult::Outcome::Failure, "The task reported failure"};
+      } else {
+        return std::invoke(func);
+      }
+    } catch (const std::exception &e) {
+      return {TaskResult::Outcome::Failure, e.what()};
+    } catch (...) {
+      return {TaskResult::Outcome::Failure, "Unknown task exception"};
+    }
+  }
+
+public:
+  // Queues one task. The frame loop dispatches it after rendering the frame.
+  template <typename Func>
+  bool runAsync(Func func,
+                std::function<void(TaskResult::Outcome)> onComplete = {}) {
+    if (busy())
+      return false;
+
+    pendingTask = [func = std::move(func)]() mutable {
+      return invokeTask(func);
+    };
+    completion = std::move(onComplete);
+    lastMessage.clear();
+    computationRunning = true;
+    return true;
+  }
+
+  bool busy() const { return computationRunning; }
+  bool hasPendingTask() const { return static_cast<bool>(pendingTask); }
+  bool dispatchPending();
+  bool pollCompletion();
+  void waitForCompletion();
+  const std::string &statusMessage() const { return lastMessage; }
 };
 
 struct LayoutContext {
@@ -368,6 +456,7 @@ struct UIContext {
   ImageContext imageContext;
   HelpContext helpContext;
   AsyncContext asyncContext;
+  GenerationPreview generationPreview;
   LayoutContext layoutContext;
   GenerationContext generationContext;
   ClimateContext climateUI;
@@ -389,9 +478,8 @@ struct UIContext {
     return value * layoutContext.uiScale;
   }
 
-  inline ImVec2 scaled(const ImVec2& vec) const {
-    return ImVec2(vec.x * layoutContext.uiScale, 
-                  vec.y * layoutContext.uiScale);
+  inline ImVec2 scaled(const ImVec2 &vec) const {
+    return ImVec2(scaled(vec.x), scaled(vec.y));
   }
 };
 
