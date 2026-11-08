@@ -48,6 +48,7 @@ struct ImageContext {
   bool updateTexture2 = false;
   int textureWidth = 0;
   int textureHeight = 0;
+  std::function<std::string(int, int)> pixelDescription;
 
   bool isPrimaryTextureActive() { return primaryTexture != 0; }
   bool isSecondaryTextureActive() { return secondaryTexture != 0; }
@@ -74,7 +75,10 @@ struct ImageContext {
     resetTexture(1);
   }
 
-  void updateImage(int index, const Fwg::Gfx::Image &image) {
+  template <typename ImageType>
+  void updateImageImpl(int index, ImageType &&image) {
+    if (index == 0)
+      pixelDescription = {};
     GLuint &texture = (index == 0) ? primaryTexture : secondaryTexture;
     auto &updateFlag = (index == 0) ? updateTexture1 : updateTexture2;
 
@@ -82,25 +86,37 @@ struct ImageContext {
     Fwg::UI::Utils::freeTexture(&texture);
     updateFlag = false;
 
-    if (!image.initialised() || image.imageData.empty())
+    if (!image.initialised() || image.imageData.empty()) {
+      activeImages[index] = std::forward<ImageType>(image);
+      if (index == 0) {
+        textureWidth = 0;
+        textureHeight = 0;
+      }
       return;
+    }
 
     try {
-      activeImages[index] = image;
-
+      activeImages[index] = std::forward<ImageType>(image);
       // Upload OpenGL texture
-      if (!Fwg::UI::Utils::getResourceView(image, &texture, &textureWidth,
-                                           &textureHeight)) {
+      if (!Fwg::UI::Utils::getResourceView(activeImages[index], &texture,
+                                           &textureWidth, &textureHeight)) {
         Fwg::Utils::Logging::logLine("ERROR: Couldn't create OpenGL texture");
         return;
       }
 
-      textureWidth = image.width();
-      textureHeight = image.height();
+      textureWidth = activeImages[index].width();
+      textureHeight = activeImages[index].height();
     } catch (const std::exception &e) {
       Fwg::Utils::Logging::logLine(
           std::string("ERROR: Exception in updateImage: ") + e.what());
     }
+  }
+
+  void updateImage(int index, const Fwg::Gfx::Image &image) {
+    updateImageImpl(index, image);
+  }
+  void updateImage(int index, Fwg::Gfx::Image &&image) {
+    updateImageImpl(index, std::move(image));
   }
 };
 
@@ -429,7 +445,6 @@ struct GenerationContext {
   bool analyze = false;
   bool loadedHeightmap = false;
   int amountClassificationsNeeded = 0;
-  bool redoHumidity = false;
   bool modifiedAreas = false;
 };
 struct ClimateInput {

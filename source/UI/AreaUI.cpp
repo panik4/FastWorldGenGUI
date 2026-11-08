@@ -1,6 +1,17 @@
 #include "UI/AreaUI.h"
 
 namespace Fwg::UI::Areas {
+namespace {
+bool hasCurrentVisualizationDimensions(const Fwg::Cfg &config,
+                                       const char *visualizationName) {
+  if (Fwg::Gfx::isCurrentVisualizationDimensions(config.width, config.height,
+                                                 config.processingArea))
+    return true;
+  Fwg::Utils::Logging::logLine("Skipping ", visualizationName,
+                               " visualization: map dimensions are stale");
+  return false;
+}
+} // namespace
 
 void areaInputSelector(Fwg::Cfg &cfg) {
   ImGui::TextUnformatted("Area Input Mode");
@@ -22,18 +33,10 @@ int showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Density")) {
     if (uiContext.tabSwitchEvent()) {
       const auto area = static_cast<size_t>(cfg.processingArea);
-      // pre-create density map, if not existing yet, so users see the default
-      // map and can then decide to overwrite (or change parameters)
-      if (fwg.climateData.habitabilities.empty() && cfg.processingArea > 0 &&
-          fwg.climateData.climateChances.size() == area &&
-          fwg.terrainData.landFormIds.size() == area &&
-          fwg.terrainData.distance.size() == area &&
-          fwg.terrainData.inclination.size() == area &&
-          fwg.terrainData.altitudes.size() == area) {
-        fwg.genHabitability(cfg);
-      }
+      const bool currentDimensions =
+          hasCurrentVisualizationDimensions(cfg, "density");
       uiContext.imageContext.updateImage(
-          0, cfg.processingArea > 0 &&
+          0, currentDimensions && cfg.processingArea > 0 &&
                      fwg.climateData.habitabilities.size() == area
                  ? Gfx::displayHabitability(fwg.climateData.habitabilities,
                                             cfg.climateGenerationContext())
@@ -48,11 +51,10 @@ int showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                        "states based on climate habitability.");
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::climate(fwg.climateData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData)});
-
-    if (guard.ready()) {
+    {
+      auto guard = UI::PrerequisiteChecker::require(
+          {UI::PrerequisiteChecker::climateOperation(
+              fwg, cfg, ClimateOperation::Habitability)});
       if (UI::Elements::ImportantStepButton(
               "Generate Density from Climate Data", ImVec2(250, 0))) {
         uiContext.asyncContext.runAsync(
@@ -60,9 +62,8 @@ int showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.loadHabitability(
-            cfg, Fwg::IO::Reader::readGenericImage(uiContext.draggedFile,
-                                                   cfg.imageReadContext()));
+        fwg.importClimateImage(cfg, ClimateProduct::Habitability,
+                               uiContext.draggedFile);
         uiContext.imageContext.resetTexture(0);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
@@ -77,7 +78,8 @@ void showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                          UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("SuperSegments")) {
     if (uiContext.tabSwitchEvent()) {
-      if (cfg.processingArea > 0 &&
+      if (hasCurrentVisualizationDimensions(cfg, "supersegments") &&
+          cfg.processingArea > 0 &&
           fwg.worldMap.size() == static_cast<size_t>(cfg.processingArea) &&
           !fwg.areaData.superSegments.empty()) {
         uiContext.imageContext.updateImage(
@@ -425,7 +427,8 @@ int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                      UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Continents")) {
     if (uiContext.tabSwitchEvent()) {
-      if (cfg.processingArea > 0 && !fwg.areaData.provinces.empty() &&
+      if (hasCurrentVisualizationDimensions(cfg, "continents") &&
+          cfg.processingArea > 0 && !fwg.areaData.provinces.empty() &&
           !fwg.areaData.regions.empty() &&
           fwg.terrainData.detailedHeightMap.size() ==
               static_cast<size_t>(cfg.processingArea)) {

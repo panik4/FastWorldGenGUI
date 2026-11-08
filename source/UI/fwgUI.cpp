@@ -103,6 +103,30 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
                      ImVec2(texWidth * uiContext.imageContext.zoom,
                             texHeight * uiContext.imageContext.zoom));
 
+        if (uiContext.imageContext.pixelDescription && ImGui::IsItemHovered()) {
+          const auto mouse = ImGui::GetMousePos();
+          const auto imageMin = ImGui::GetItemRectMin();
+          const auto imageSize = ImGui::GetItemRectSize();
+          const auto relativeX = mouse.x - imageMin.x;
+          const auto relativeY = mouse.y - imageMin.y;
+          if (imageSize.x > 0.0f && imageSize.y > 0.0f && relativeX >= 0.0f &&
+              relativeY >= 0.0f && relativeX < imageSize.x &&
+              relativeY < imageSize.y) {
+            const auto pixelX = std::clamp(
+                static_cast<int>(relativeX / imageSize.x *
+                                 uiContext.imageContext.textureWidth),
+                0, uiContext.imageContext.textureWidth - 1);
+            const auto pixelY = std::clamp(
+                static_cast<int>(relativeY / imageSize.y *
+                                 uiContext.imageContext.textureHeight),
+                0, uiContext.imageContext.textureHeight - 1);
+            const auto description =
+                uiContext.imageContext.pixelDescription(pixelX, pixelY);
+            if (!description.empty())
+              ImGui::SetTooltip("%s", description.c_str());
+          }
+        }
+
         if (io.KeyCtrl && io.MouseWheel) {
           // Get the mouse position relative to the image
           ImVec2 mouse_pos = ImGui::GetMousePos();
@@ -524,11 +548,6 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   }
 
   if (ImGui::Button("Generate all fwg data")) {
-    fwg.resetData();
-    // reset this because now we randomly generate all data, so heightmap
-    // modifications MUST be allowed again
-    cfg.terrainConfig.allowHeightmapModification = true;
-
     // run the generation async
     uiContext.asyncContext.runAsync(
         [&fwg]() { return fwg.generateWorld(); },
@@ -607,7 +626,6 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                            reinterpret_cast<int *>(&climateMode),
                            static_cast<int>(ClimateMode::DEFAULT))) {
       cfg.climateConfig.fantasyClimate = false;
-      uiContext.generationContext.redoHumidity = true;
     }
     ImGui::SameLine();
     if (ImGui::RadioButton("Generate Random Climate",
@@ -620,7 +638,6 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
                            reinterpret_cast<int *>(&climateMode),
                            static_cast<int>(ClimateMode::INPUT))) {
       cfg.climateConfig.fantasyClimate = false;
-      uiContext.generationContext.redoHumidity = true;
     }
 
     ImGui::Spacing();
@@ -628,18 +645,22 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     ImGui::Spacing();
 
     ImGui::SeparatorText("Base Climate Parameters");
+    {
+      UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
+      grid.AddInputDouble("Polar annual mean (°C)",
+                          &cfg.climateConfig.polarAnnualMeanCelsius, -100.0,
+                          80.0);
+      grid.AddInputDouble("Equatorial annual mean (°C)",
+                          &cfg.climateConfig.equatorialAnnualMeanCelsius,
+                          -100.0, 80.0);
+    }
+
     if (climateMode == ClimateMode::DEFAULT ||
         climateMode == ClimateMode::FANTASY) {
       {
         UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
-
-        if (grid.AddInputDouble("Base Temperature",
-                                &cfg.climateConfig.baseTemperature, -100.0,
-                                100.0) |
-            grid.AddInputDouble("Base Humidity",
-                                &cfg.climateConfig.baseHumidity, 0.0, 100.0)) {
-          uiContext.generationContext.redoHumidity = true;
-        }
+        grid.AddInputDouble("Base Humidity", &cfg.climateConfig.baseHumidity,
+                            0.0, 100.0);
       }
 
       ImGui::Spacing();
@@ -648,18 +669,17 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       {
         UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
 
-        if (grid.AddInputDouble("Latitude High", &cfg.latHigh, -90.0, 90.0) |
-            grid.AddInputDouble("Latitude Low", &cfg.latLow, -90.0, 90.0) |
-            grid.AddInputDouble("River Amount", &cfg.riverConfig.riverFactor,
-                                0.0, 10.0) |
-            grid.AddInputDouble("River Humidity",
-                                &cfg.climateConfig.riverHumidityFactor, 0.0,
-                                10.0) |
-            grid.AddInputDouble("River Range",
-                                &cfg.climateConfig.riverEffectRangeFactor, 0.0,
-                                10.0)) {
-          uiContext.generationContext.redoHumidity = true;
-        }
+        grid.AddInputDouble("Northern latitude (°)", &cfg.latitudeNorthDegrees,
+                            -90.0, 90.0);
+        grid.AddInputDouble("Southern latitude (°)", &cfg.latitudeSouthDegrees,
+                            -90.0, 90.0);
+        grid.AddInputDouble("River Amount", &cfg.riverConfig.riverFactor, 0.0,
+                            10.0);
+        grid.AddInputDouble("River Humidity",
+                            &cfg.climateConfig.riverHumidityFactor, 0.0, 10.0);
+        grid.AddInputDouble("River Range",
+                            &cfg.climateConfig.riverEffectRangeFactor, 0.0,
+                            10.0);
         grid.AddCheckbox("Carve River Canyons", &cfg.riverConfig.canyonEnabled);
         grid.AddInputInt("Canyon Range (pixels)", &cfg.riverConfig.canyonRange,
                          0, 64);

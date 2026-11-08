@@ -1,4 +1,6 @@
 #include "UI/HeightmapUI.h"
+#include <exception>
+#include <utility>
 
 namespace Fwg::UI::Heightmap {
 namespace Detail {
@@ -596,13 +598,22 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               (layerTypeSelection == 0)   ? fwg.terrainData.shapeLayers
               : (layerTypeSelection == 1) ? fwg.terrainData.landLayers
                                           : fwg.terrainData.seaLayers;
-          if (selectedLayer < selectedLayers.size() &&
-              selectedLayers[selectedLayer].size() &&
-              fwg.terrainData.detailedHeightMap.size()) {
-            uiContext.imageContext.updateImage(
-                1, Fwg::Gfx::Image(cfg.width, cfg.height, 24,
-                                   selectedLayers[selectedLayer]));
+          Fwg::Gfx::Image layerImage;
+          if (Fwg::Gfx::isCurrentVisualizationDimensions(cfg.width, cfg.height,
+                                                         cfg.processingArea) &&
+              selectedLayer < selectedLayers.size() &&
+              selectedLayers[selectedLayer].size() ==
+                  static_cast<std::size_t>(cfg.processingArea) &&
+              fwg.terrainData.detailedHeightMap.size() ==
+                  static_cast<std::size_t>(cfg.processingArea)) {
+            layerImage = Fwg::Gfx::Image(cfg.width, cfg.height, 24,
+                                         selectedLayers[selectedLayer]);
+          } else {
+            Fwg::Utils::Logging::logLine(
+                "Skipping heightmap layer visualization: selected layer does "
+                "not match the current map dimensions");
           }
+          uiContext.imageContext.updateImage(1, std::move(layerImage));
           updateLayer = false;
         } else {
           if (fwg.terrainData.landMask.size()) {
@@ -626,6 +637,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     // Heightmap preset selection with auto-initialization
     static int activeConfigIndex = -1;
     static bool initializedDefault = false;
+    static std::string presetError;
 
     // Initialize with default config on first run
     if (!initializedDefault &&
@@ -665,9 +677,15 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         if (ImGui::Selectable(
                 uiContext.generationContext.heightmapConfigFiles[i].c_str(),
                 isActive)) {
-          activeConfigIndex = i;
-          cfg.readHeightmapConfig(
-              uiContext.generationContext.heightmapConfigFiles[i]);
+          try {
+            cfg.readHeightmapConfig(
+                uiContext.generationContext.heightmapConfigFiles[i]);
+            activeConfigIndex = i;
+            presetError.clear();
+          } catch (const std::exception &error) {
+            presetError = "Could not load preset: " + std::string(error.what());
+            Fwg::Utils::Logging::logLine(presetError);
+          }
         }
         if (isActive)
           ImGui::SetItemDefaultFocus();
@@ -675,6 +693,12 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       ImGui::EndCombo();
     }
     ImGui::PopItemWidth();
+
+    if (!presetError.empty()) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+      ImGui::TextWrapped("%s", presetError.c_str());
+      ImGui::PopStyleColor();
+    }
 
     ImGui::Spacing();
     ImGui::SeparatorText("Basic Parameters");

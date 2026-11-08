@@ -43,6 +43,12 @@ public:
 // Main prerequisite checker class
 class PrerequisiteChecker {
 public:
+  static Prerequisite climateOperation(const FastWorldGenerator &generator,
+                                       const Cfg &config,
+                                       ClimateOperation operation) {
+    const auto error = generator.climatePrerequisiteError(config, operation);
+    return {"Climate operation", error, [error] { return error.empty(); }};
+  }
   // =========================================================================
   // Terrain Prerequisites
   // =========================================================================
@@ -72,8 +78,9 @@ public:
   // =========================================================================
 
   static Prerequisite temperature(const Climate::ClimateData &climateData) {
-    return {"Temperature data", "Generate temperature map first",
-            [&]() { return !climateData.averageTemperatures.empty(); }};
+    return {"Temperature data", "Generate temperature map first", [&]() {
+              return !climateData.temperatures.annualMeanCelsius.empty();
+            }};
   }
 
   static Prerequisite humidity(const Climate::ClimateData &climateData) {

@@ -1,6 +1,121 @@
 #include "UI/ClimateUI.h"
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <filesystem>
+#include <utility>
 
 namespace Fwg::UI::Climate {
+namespace {
+struct ExperimentalWindUiState {
+  Fwg::Climate::Winds::ExperimentalWindSettings settings;
+  int previewMode = 0; // 0: direction, 1: speed
+  int installedMode = -1;
+  bool generationPending = false;
+  bool showPreview = false;
+};
+
+ExperimentalWindUiState &experimentalWindUiState() {
+  static ExperimentalWindUiState state;
+  return state;
+}
+
+bool windFieldMatches(const Fwg::Cfg &config,
+                      const Fwg::FastWorldGenerator &generator,
+                      const ExperimentalWindUiState &state) {
+  return generator.experimentalAnnualWindField.matches(
+      config.width, config.height, config.latitudeSouthDegrees,
+      config.latitudeNorthDegrees, state.settings);
+}
+
+void installExperimentalWindPreview(Fwg::FastWorldGenerator &generator,
+                                    UIContext &uiContext,
+                                    ExperimentalWindUiState &state) {
+  const auto &field = generator.experimentalAnnualWindField;
+  auto image = state.previewMode == 0
+                   ? Fwg::Gfx::Climate::displayWindDirection(field)
+                   : Fwg::Gfx::Climate::displayWindSpeed(field);
+  uiContext.imageContext.updateImage(0, std::move(image));
+  state.installedMode = state.previewMode;
+  const auto *fieldPointer = &field;
+  uiContext.imageContext.pixelDescription = [fieldPointer](int x, int y) {
+    if (!fieldPointer || x < 0 || y < 0 || x >= fieldPointer->width ||
+        y >= fieldPointer->height)
+      return std::string{};
+    const auto pixel = static_cast<std::size_t>(y) * fieldPointer->width + x;
+    const auto east = fieldPointer->eastwardMetersPerSecond[pixel];
+    const auto north = fieldPointer->northwardMetersPerSecond[pixel];
+    const auto speed = std::hypot(east, north);
+    char description[192];
+    if (speed < 0.01f) {
+      std::snprintf(description, sizeof(description),
+                    "Wind: calm (%.2f m/s)\nGrid: %d, %d", speed, x, y);
+    } else {
+      auto bearing = std::atan2(east, north) * 180.0 / std::acos(-1.0);
+      if (bearing < 0.0)
+        bearing += 360.0;
+      std::snprintf(description, sizeof(description),
+                    "Wind: %.2f m/s, bearing %.0f deg\nEast: %.2f m/s\nNorth: "
+                    "%.2f m/s\nGrid: %d, %d",
+                    speed, bearing, east, north, x, y);
+    }
+    return std::string(description);
+  };
+}
+
+void showWindDirectionLegend() {
+  struct Direction {
+    const char *label;
+    float east;
+    float north;
+  };
+  static constexpr std::array<Direction, 8> directions{{{"E", 1.0f, 0.0f},
+                                                        {"NE", 1.0f, 1.0f},
+                                                        {"N", 0.0f, 1.0f},
+                                                        {"NW", -1.0f, 1.0f},
+                                                        {"W", -1.0f, 0.0f},
+                                                        {"SW", -1.0f, -1.0f},
+                                                        {"S", 0.0f, -1.0f},
+                                                        {"SE", 1.0f, -1.0f}}};
+  for (std::size_t i = 0; i < directions.size(); ++i) {
+    const auto &direction = directions[i];
+    const auto colour =
+        Fwg::Gfx::Climate::windDirectionColour(direction.east, direction.north);
+    ImGui::ColorButton(
+        (std::string("##windDirection") + direction.label).c_str(),
+        ImVec4(colour.getRed() / 255.0f, colour.getGreen() / 255.0f,
+               colour.getBlue() / 255.0f, 1.0f),
+        ImGuiColorEditFlags_NoTooltip, ImVec2(16.0f, 16.0f));
+    ImGui::SameLine();
+    ImGui::TextUnformatted(direction.label);
+    if ((i + 1) % 4 != 0)
+      ImGui::SameLine();
+  }
+  ImGui::Text("Direction hue: E red, N yellow-green, W cyan, S violet");
+}
+
+bool hasCurrentVisualizationDimensions(const Fwg::Cfg &config,
+                                       const char *visualizationName) {
+  if (Fwg::Gfx::isCurrentVisualizationDimensions(config.width, config.height,
+                                                 config.processingArea))
+    return true;
+  Fwg::Utils::Logging::logLine("Skipping ", visualizationName,
+                               " visualization: map dimensions are stale");
+  return false;
+}
+
+void installHumidityPreview(const Fwg::Cfg &config,
+                            const Fwg::FastWorldGenerator &generator,
+                            UIContext &uiContext) {
+  uiContext.imageContext.updateImage(
+      0, hasCurrentVisualizationDimensions(config, "humidity")
+             ? Fwg::Gfx::Climate::displayHumidity(
+                   generator.climateData, config.climateGenerationContext())
+             : Fwg::Gfx::Image());
+}
+} // namespace
+
 namespace Detail {
 // Helper: Render operation-specific parameters
 void renderOperationParameters(Fwg::Climate::ClimateOperation &operation) {
@@ -47,8 +162,8 @@ void renderOperationParameters(Fwg::Climate::ClimateOperation &operation) {
 
   case ClimateOperationType::RANDOMIZE_TEMPERATURES: {
     ImGui::TextWrapped(
-        "Randomizes temperature values to create more natural variation. "
-        "Higher values produce more dramatic changes.");
+        "Adds temperature variation in Celsius. The factor sets the maximum "
+        "offset as a fraction of the polar-to-equatorial reference range.");
 
     float frequency = getParameter<float>(operation, "frequency", 1.0f);
     ImGui::Text("Frequency");
@@ -781,17 +896,40 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                        UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Temperature")) {
-    if (uiContext.tabSwitchEvent()) {
+    static int previewSelection = 0;
+    static const char *previewItems[] = {
+        "Annual",  "January",  "February", "March",  "April",
+        "May",     "June",     "July",     "August", "September",
+        "October", "November", "December"};
+    const auto refreshPreview = [&]() {
       uiContext.imageContext.updateImage(
-          0, cfg.processingArea > 0 &&
-                     fwg.climateData.averageTemperatures.size() ==
-                         static_cast<size_t>(cfg.processingArea)
+          0, hasCurrentVisualizationDimensions(cfg, "temperature")
                  ? Fwg::Gfx::Climate::displayTemperature(
-                       fwg.climateData, cfg.climateGenerationContext())
+                       fwg.climateData, cfg.climateConfig,
+                       cfg.climateGenerationContext(), previewSelection - 1)
                  : Fwg::Gfx::Image());
+    };
+    if (uiContext.tabSwitchEvent()) {
+      refreshPreview();
       uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
     }
     uiContext.helpContext.showHelpTextBox("Temperature");
+
+    if (ImGui::Combo("Preview", &previewSelection, previewItems, 13))
+      refreshPreview();
+
+    bool settingsChanged = false;
+    {
+      UI::Elements::GridLayout temperatureSettings(2);
+      settingsChanged |= temperatureSettings.AddInputDouble(
+          "Maximum seasonal amplitude (°C)",
+          &cfg.climateConfig.maximumSeasonalAmplitudeCelsius, 0.0, 80.0);
+      settingsChanged |= temperatureSettings.AddInputDouble(
+          "Elevation cooling (°C/m)",
+          &cfg.climateConfig.elevationCoolingCelsiusPerMeter, 0.0, 0.1);
+    }
+    if (settingsChanged)
+      refreshPreview();
 
     ImGui::SeparatorText("Temperature Map Generation");
 
@@ -801,34 +939,42 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     ImGui::Spacing();
 
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::landMask(fwg.terrainData)});
-
-    if (guard.ready()) {
+    {
+      auto guard = UI::PrerequisiteChecker::require(
+          {UI::PrerequisiteChecker::climateOperation(
+              fwg, cfg, ClimateOperation::Temperature)});
       if (!cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton("Generate Temperature Map",
                                             ImVec2(280, 0))) {
         uiContext.asyncContext.runAsync(
-            [&fwg, &cfg]() { return fwg.genTemperatures(cfg); });
+            [&fwg, &cfg]() { return fwg.genTemperatures(cfg); },
+            [refreshPreview](TaskResult::Outcome) { refreshPreview(); });
       }
       if (cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton(
               "Generate Temperature Map (new seed)", ImVec2(280, 0))) {
-        uiContext.asyncContext.runAsync([&fwg, &cfg]() {
-          cfg.randomSeed = true;
-          cfg.reRandomize();
-          return fwg.genTemperatures(cfg);
-        });
+        uiContext.asyncContext.runAsync(
+            [&fwg, &cfg]() {
+              cfg.randomSeed = true;
+              cfg.reRandomize();
+              return fwg.genTemperatures(cfg);
+            },
+            [refreshPreview](TaskResult::Outcome) { refreshPreview(); });
+      }
+
+      if (!fwg.climateData.temperatures.annualMeanCelsius.empty() &&
+          UI::Elements::ImportantStepButton("Rebuild Seasonal Metadata",
+                                            ImVec2(280, 0))) {
+        uiContext.asyncContext.runAsync(
+            [&fwg, &cfg]() { return fwg.rebuildTemperatureSeasonality(cfg); },
+            [refreshPreview](TaskResult::Outcome) { refreshPreview(); });
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.loadTemperatures(cfg,
-                             Fwg::IO::Reader::readGenericImage(
-                                 uiContext.draggedFile, cfg.imageReadContext()),
-                             applyAltitudeEffect);
+        fwg.importClimateImage(cfg, ClimateProduct::Temperature,
+                               uiContext.draggedFile, applyAltitudeEffect);
         uiContext.triggeredDrag = false;
+        refreshPreview();
         uiContext.imageContext.resetTexture();
       }
     }
@@ -840,15 +986,15 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
 int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                     UIContext &uiContext) {
+  auto &windUi = experimentalWindUiState();
   if (UI::Elements::BeginSubTabItem("Humidity")) {
     if (uiContext.tabSwitchEvent()) {
-      uiContext.imageContext.updateImage(
-          0,
-          cfg.processingArea > 0 && fwg.climateData.humidities.size() ==
-                                        static_cast<size_t>(cfg.processingArea)
-              ? Fwg::Gfx::Climate::displayHumidity(
-                    fwg.climateData, cfg.climateGenerationContext())
-              : Fwg::Gfx::Image());
+      if (windUi.showPreview && windFieldMatches(cfg, fwg, windUi)) {
+        installExperimentalWindPreview(fwg, uiContext, windUi);
+      } else {
+        installHumidityPreview(cfg, fwg, uiContext);
+        windUi.installedMode = -1;
+      }
       uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
     }
     uiContext.helpContext.showHelpTextBox("Humidity");
@@ -861,12 +1007,10 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     ImGui::Spacing();
 
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::landMask(fwg.terrainData)});
-
-    if (guard.ready()) {
+    {
+      auto guard = UI::PrerequisiteChecker::require(
+          {UI::PrerequisiteChecker::climateOperation(
+              fwg, cfg, ClimateOperation::Humidity)});
       if (!cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton("Generate Humidity Map",
                                             ImVec2(220, 0))) {
@@ -884,13 +1028,154 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.loadHumidity(cfg,
-                         Fwg::IO::Reader::readGenericImage(
-                             uiContext.draggedFile, cfg.imageReadContext()),
-                         applyElevationEffect);
-        uiContext.generationContext.redoHumidity = false;
+        fwg.importClimateImage(cfg, ClimateProduct::Humidity,
+                               uiContext.draggedFile, applyElevationEffect);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
+      }
+    }
+
+    ImGui::SeparatorText("Experimental Annual Winds");
+    ImGui::TextWrapped(
+        "Full-resolution prescribed wind belts for the precipitation model "
+        "experiment. These winds do not affect existing generation.");
+    const auto area = static_cast<std::int64_t>(cfg.width) * cfg.height;
+    const auto windMiB = area > 0 ? static_cast<double>(area) * 2.0 *
+                                        sizeof(float) / (1024.0 * 1024.0)
+                                  : 0.0;
+    const auto previewCpuMiB = area > 0 ? static_cast<double>(area) *
+                                              sizeof(Fwg::Gfx::Colour) /
+                                              (1024.0 * 1024.0)
+                                        : 0.0;
+    const auto previewGpuMiB =
+        area > 0 ? static_cast<double>(area) * 4.0 / (1024.0 * 1024.0) : 0.0;
+    ImGui::Text("Wind grid: %d x %d; components %.1f MiB; preview about %.1f "
+                "MiB CPU + %.1f MiB GPU",
+                cfg.width, cfg.height, windMiB, previewCpuMiB, previewGpuMiB);
+
+    const double multiplierMin = 0.0;
+    const double multiplierMax = 3.0;
+    ImGui::SliderScalar("Zonal wind multiplier", ImGuiDataType_Double,
+                        &windUi.settings.zonalMultiplier, &multiplierMin,
+                        &multiplierMax, "%.2f");
+    ImGui::SliderScalar("Meridional wind multiplier", ImGuiDataType_Double,
+                        &windUi.settings.meridionalMultiplier, &multiplierMin,
+                        &multiplierMax, "%.2f");
+
+    const bool hasPositiveDimensions = cfg.width > 0 && cfg.height > 0;
+    const bool windAreaAllowed =
+        area > 0 && cfg.resolutionConstraints.maxImageArea > 0 &&
+        area <= cfg.resolutionConstraints.maxImageArea &&
+        area <= Fwg::Climate::Winds::maximumExperimentalWindPixels;
+    if (!hasPositiveDimensions)
+      ImGui::TextDisabled("Configured map dimensions are invalid.");
+    else if (!windAreaAllowed)
+      ImGui::TextDisabled(
+          "This grid exceeds the configured wind memory limit.");
+
+    const bool currentWind =
+        !windUi.generationPending && windFieldMatches(cfg, fwg, windUi);
+    ImGui::BeginDisabled(!windAreaAllowed || uiContext.asyncContext.busy());
+    const bool generateWind =
+        ImGui::Button("Generate Full-Resolution Annual Winds");
+    ImGui::EndDisabled();
+    if (generateWind) {
+      if (!cfg.validateResolution(cfg.width, cfg.height)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f),
+                           "Map resolution does not meet configured limits.");
+      } else {
+        const auto width = cfg.width;
+        const auto height = cfg.height;
+        const auto latitudeSouth = cfg.latitudeSouthDegrees;
+        const auto latitudeNorth = cfg.latitudeNorthDegrees;
+        const auto settings = windUi.settings;
+        windUi.showPreview = false;
+        windUi.installedMode = -1;
+        windUi.generationPending = true;
+        uiContext.imageContext.pixelDescription = {};
+        uiContext.imageContext.updateImage(0, Fwg::Gfx::Image());
+        const bool queued = uiContext.asyncContext.runAsync(
+            [&fwg, width, height, latitudeSouth, latitudeNorth, settings]() {
+              return fwg.genExperimentalAnnualWinds(
+                  width, height, latitudeSouth, latitudeNorth, settings);
+            },
+            [&fwg, &cfg, &uiContext, &windUi](TaskResult::Outcome outcome) {
+              windUi.generationPending = false;
+              if (outcome == TaskResult::Outcome::Success &&
+                  windFieldMatches(cfg, fwg, windUi)) {
+                windUi.showPreview = true;
+                installExperimentalWindPreview(fwg, uiContext, windUi);
+              } else {
+                windUi.showPreview = false;
+                windUi.installedMode = -1;
+                installHumidityPreview(cfg, fwg, uiContext);
+              }
+            });
+        if (!queued) {
+          windUi.generationPending = false;
+          installHumidityPreview(cfg, fwg, uiContext);
+        }
+      }
+    }
+    if (uiContext.asyncContext.busy()) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("Generating...");
+    }
+
+    if (windUi.showPreview && !currentWind && windUi.installedMode != -1) {
+      uiContext.imageContext.updateImage(0, Fwg::Gfx::Image());
+      windUi.installedMode = -1;
+    }
+    if (windUi.showPreview && !currentWind)
+      ImGui::TextColored(
+          ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
+          "Wind settings or map geometry changed. Regenerate to view.");
+
+    if (!windUi.generationPending && windFieldMatches(cfg, fwg, windUi)) {
+      ImGui::SameLine();
+      const auto previewButton =
+          windUi.showPreview ? "Hide Wind Preview" : "Show Wind Preview";
+      if (ImGui::Button(previewButton)) {
+        windUi.showPreview = !windUi.showPreview;
+        if (windUi.showPreview)
+          installExperimentalWindPreview(fwg, uiContext, windUi);
+        else {
+          installHumidityPreview(cfg, fwg, uiContext);
+          windUi.installedMode = -1;
+        }
+      }
+
+      const char *previewModes[] = {"Direction (cyclic colour)", "Speed"};
+      if (ImGui::Combo("Wind preview", &windUi.previewMode, previewModes,
+                       IM_ARRAYSIZE(previewModes))) {
+        if (windUi.showPreview)
+          installExperimentalWindPreview(fwg, uiContext, windUi);
+      }
+      if (windUi.previewMode == 0)
+        showWindDirectionLegend();
+      else
+        ImGui::Text("Speed scale: 0-12 m/s (blue to red), calm is grey");
+
+      if (windUi.showPreview) {
+        ImGui::Text(
+            "Hover over the map preview for component values and bearing.");
+        ImGui::BeginDisabled(cfg.mapsPath.empty());
+        if (ImGui::Button("Export Selected Preview")) {
+          const auto directory =
+              std::filesystem::path(cfg.mapsPath) / "climate" / "experimental";
+          std::filesystem::create_directories(directory);
+          const auto filename = windUi.previewMode == 0
+                                    ? "annualWindDirection.png"
+                                    : "annualWindSpeed.png";
+          const auto path = (directory / filename).string();
+          auto image = std::move(uiContext.imageContext.activeImages[0]);
+          Fwg::Gfx::Png::save(std::move(image), path, false, LCT_RGBA, 8, 255,
+                              cfg.username);
+          installExperimentalWindPreview(fwg, uiContext, windUi);
+        }
+        ImGui::EndDisabled();
+        if (cfg.mapsPath.empty())
+          ImGui::TextDisabled("Set a maps output path to export the preview.");
       }
     }
 
@@ -903,14 +1188,16 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                  UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Rivers")) {
     if (uiContext.tabSwitchEvent()) {
+      const auto states = fwg.generationStateSnapshot();
+      const bool riversReady =
+          states.at(static_cast<std::size_t>(ClimateProduct::Rivers)).status ==
+          GenerationStateTracker::Status::Ready;
       uiContext.imageContext.updateImage(
-          0,
-          cfg.processingArea > 0 && fwg.terrainData.detailedHeightMap.size() ==
-                                        static_cast<size_t>(cfg.processingArea)
-              ? Gfx::riverMap(fwg.terrainData.detailedHeightMap,
-                              fwg.climateData.rivers,
-                              cfg.visualizationContext())
-              : Fwg::Gfx::Image());
+          0, riversReady && hasCurrentVisualizationDimensions(cfg, "river")
+                 ? Gfx::riverMap(fwg.terrainData.detailedHeightMap,
+                                 fwg.climateData.rivers,
+                                 cfg.visualizationContext())
+                 : Fwg::Gfx::Image());
       uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
     }
     uiContext.helpContext.showHelpTextBox("Rivers");
@@ -926,13 +1213,10 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::landMask(fwg.terrainData),
-         UI::PrerequisiteChecker::humidity(fwg.climateData)});
-
-    if (guard.ready()) {
+    {
+      auto guard = UI::PrerequisiteChecker::require(
+          {UI::PrerequisiteChecker::climateOperation(
+              fwg, cfg, ClimateOperation::Rivers)});
       if (UI::Elements::ImportantStepButton("Generate River Map",
                                             ImVec2(200, 0))) {
         uiContext.asyncContext.runAsync(
@@ -948,12 +1232,9 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        const auto riverInput = Fwg::IO::Reader::readGenericImage(
-            uiContext.draggedFile, cfg.imageReadContext());
-        if (uiContext.blueMaskRiverImport)
-          fwg.loadRiversFromBlueMask(cfg, riverInput);
-        else
-          fwg.loadRivers(cfg, riverInput);
+        fwg.importClimateImage(cfg, ClimateProduct::Rivers,
+                               uiContext.draggedFile, false,
+                               uiContext.blueMaskRiverImport);
         uiContext.imageContext.resetTexture();
         uiContext.triggeredDrag = false;
       }
@@ -968,55 +1249,34 @@ int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Climate Zones")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.updateImage(
-          0,
-          cfg.processingArea > 0 && fwg.climateData.climateChances.size() ==
-                                        static_cast<size_t>(cfg.processingArea)
-              ? Fwg::Gfx::Climate::displayClimate(
-                    fwg.climateData, false, cfg.climateConfig,
-                    cfg.climateGenerationContext())
-              : Fwg::Gfx::Image());
+          0, hasCurrentVisualizationDimensions(cfg, "climate")
+                 ? Fwg::Gfx::Climate::displayClimate(
+                       fwg.climateData, false, cfg.climateConfig,
+                       cfg.climateGenerationContext())
+                 : Fwg::Gfx::Image());
       uiContext.imageContext.updateImage(1, fwg.worldMap);
     }
 
     uiContext.helpContext.showHelpTextBox("Climate Gen");
     ImGui::SeparatorText("Generate climate map");
 
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::landMask(fwg.terrainData),
-         UI::PrerequisiteChecker::humidity(fwg.climateData),
-         UI::PrerequisiteChecker::temperature(fwg.climateData)});
-
-    if (guard.ready()) {
+    {
+      auto guard = UI::PrerequisiteChecker::require(
+          {UI::PrerequisiteChecker::climateOperation(
+              fwg, cfg, ClimateOperation::Classification)});
       if (ImGui::Button(
               "Generate Climate Zones from Temperature and Heightmap Data")) {
         uiContext.asyncContext.runAsync(
-            [&fwg, &cfg, &uiContext]() {
-              if (uiContext.generationContext.redoHumidity) {
-                if (!fwg.genTemperatures(cfg) || !fwg.genHumidity(cfg))
-                  return false;
-              }
-              return fwg.genClimate(cfg);
-            },
-            [&uiContext](TaskResult::Outcome outcome) {
-              uiContext.generationContext.redoHumidity =
-                  outcome == TaskResult::Outcome::Failure;
-            });
+            [&fwg, &cfg]() { return fwg.genClimate(cfg); });
       } else if (cfg.climateConfig.fantasyClimate &&
                  ImGui::Button("Generate completely random fantasy climate")) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg]() {
-              cfg.randomSeed = true;
-              cfg.reRandomize();
-              if (!fwg.genTemperatures(cfg) || !fwg.genHumidity(cfg))
-                return false;
-              return fwg.genClimate(cfg);
-            },
-            [&uiContext](TaskResult::Outcome outcome) {
-              uiContext.generationContext.redoHumidity =
-                  outcome == TaskResult::Outcome::Failure;
-            });
+        uiContext.asyncContext.runAsync([&fwg, &cfg]() {
+          cfg.randomSeed = true;
+          cfg.reRandomize();
+          if (!fwg.genTemperatures(cfg) || !fwg.genHumidity(cfg))
+            return false;
+          return fwg.genClimate(cfg);
+        });
       }
 
       if (uiContext.triggeredDrag) {
@@ -1036,20 +1296,16 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Forests")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.updateImage(
-          0,
-          cfg.processingArea > 0 && fwg.climateData.climateChances.size() ==
-                                        static_cast<size_t>(cfg.processingArea)
-              ? Fwg::Gfx::Climate::displayClimate(
-                    fwg.climateData, true, cfg.climateConfig,
-                    cfg.climateGenerationContext())
-              : Fwg::Gfx::Image());
+          0, hasCurrentVisualizationDimensions(cfg, "climate")
+                 ? Fwg::Gfx::Climate::displayClimate(
+                       fwg.climateData, true, cfg.climateConfig,
+                       cfg.climateGenerationContext())
+                 : Fwg::Gfx::Image());
       uiContext.imageContext.updateImage(
-          1,
-          cfg.processingArea > 0 && fwg.climateData.forestDensity.size() ==
-                                        static_cast<size_t>(cfg.processingArea)
-              ? Fwg::Gfx::Climate::displayTreeDensity(
-                    fwg.climateData, cfg.climateGenerationContext())
-              : Fwg::Gfx::Image());
+          1, hasCurrentVisualizationDimensions(cfg, "tree density")
+                 ? Fwg::Gfx::Climate::displayTreeDensity(
+                       fwg.climateData, cfg.climateGenerationContext())
+                 : Fwg::Gfx::Image());
     }
     uiContext.helpContext.showHelpTextBox("Forests");
 
@@ -1074,14 +1330,10 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::landMask(fwg.terrainData),
-         UI::PrerequisiteChecker::humidity(fwg.climateData),
-         UI::PrerequisiteChecker::temperature(fwg.climateData)});
-
-    if (guard.ready()) {
+    {
+      auto guard = UI::PrerequisiteChecker::require(
+          {UI::PrerequisiteChecker::climateOperation(
+              fwg, cfg, ClimateOperation::Forests)});
       if (UI::Elements::ImportantStepButton("Generate Forest Map",
                                             ImVec2(200, 0))) {
         uiContext.asyncContext.runAsync(
@@ -1089,9 +1341,8 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.loadForests(
-            cfg, Fwg::IO::Reader::readGenericImage(uiContext.draggedFile,
-                                                   cfg.imageReadContext()));
+        fwg.importClimateImage(cfg, ClimateProduct::Forests,
+                               uiContext.draggedFile);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
       }
