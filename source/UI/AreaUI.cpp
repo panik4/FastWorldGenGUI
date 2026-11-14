@@ -32,16 +32,15 @@ int showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                    UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Density")) {
     if (uiContext.tabSwitchEvent()) {
-      const auto area = static_cast<size_t>(cfg.processingArea);
       const bool currentDimensions =
           hasCurrentVisualizationDimensions(cfg, "density");
       uiContext.imageContext.updateImage(
-          0, currentDimensions && cfg.processingArea > 0 &&
-                     fwg.climateData.habitabilities.size() == area
+          0, fwg.hasHabitabilityData(cfg) && currentDimensions
                  ? Gfx::displayHabitability(fwg.climateData.habitabilities,
                                             cfg.climateGenerationContext())
                  : Fwg::Gfx::Image());
-      uiContext.imageContext.updateImage(1, fwg.worldMap);
+      uiContext.imageContext.updateImage(
+          1, fwg.hasWorldImageData(cfg) ? fwg.worldMap : Fwg::Gfx::Image{});
     }
 
     uiContext.helpContext.showHelpTextBox("Density");
@@ -52,18 +51,19 @@ int showDensityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     ImGui::Spacing();
     {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::climateOperation(
-              fwg, cfg, ClimateOperation::Habitability)});
-      if (UI::Elements::ImportantStepButton(
-              "Generate Density from Climate Data", ImVec2(250, 0))) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg]() { return fwg.genHabitability(cfg); });
+
+      {
+        UI::PrerequisiteGuard actionGuard{
+            Fwg::PrerequisiteChecker::canGenerateHabitability(fwg, cfg)};
+        if (UI::Elements::ImportantStepButton(
+                "Generate Density from Climate Data", ImVec2(250, 0))) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg]() { return fwg.genHabitability(cfg); });
+        }
       }
 
       if (uiContext.triggeredDrag) {
-        fwg.importClimateImage(cfg, ClimateProduct::Habitability,
-                               uiContext.draggedFile);
+        fwg.loadHabitability(cfg, uiContext.draggedFile);
         uiContext.imageContext.resetTexture(0);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
@@ -79,9 +79,8 @@ void showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("SuperSegments")) {
     if (uiContext.tabSwitchEvent()) {
       if (hasCurrentVisualizationDimensions(cfg, "supersegments") &&
-          cfg.processingArea > 0 &&
-          fwg.worldMap.size() == static_cast<size_t>(cfg.processingArea) &&
-          !fwg.areaData.superSegments.empty()) {
+          cfg.processingArea > 0 && fwg.hasWorldImageData(cfg) &&
+          fwg.hasSuperSegmentsData(cfg)) {
         uiContext.imageContext.updateImage(
             0, Fwg::Gfx::Segments::displaySuperSegments(
                    fwg.areaData.superSegments, fwg.areaGenerationContext(cfg)));
@@ -97,60 +96,73 @@ void showSuperSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::TextWrapped("SuperSegments are large landmasses and ocean regions.");
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::climate(fwg.climateData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::habitability(fwg.climateData)});
 
-    if (guard.ready()) {
-      if (UI::Elements::Button("Generate Template Images", false,
-                               ImVec2(220, 0))) {
-        Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
-                                              fwg.worldMap, true, false, false,
-                                              cfg.visualizationContext());
+    {
+      {
+        UI::PrerequisiteGuard actionGuard{Fwg::PrerequisiteChecker::check(
+            {Fwg::PrerequisiteChecker::climate(fwg, cfg),
+             Fwg::PrerequisiteChecker::landforms(fwg, cfg),
+             Fwg::PrerequisiteChecker::habitability(fwg, cfg)})};
+        if (UI::Elements::Button("Generate Template Images", false,
+                                 ImVec2(220, 0))) {
+          Fwg::Gfx::Land::displaySimpleLandType(
+              fwg.terrainData, fwg.areaData, fwg.worldMap, true, false, false,
+              cfg.visualizationContext());
+        }
       }
 
       ImGui::SameLine();
 
-      if (UI::Elements::ImportantStepButton("Generate SuperSegments",
-                                            ImVec2(220, 0))) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg]() { return fwg.genSuperSegments(cfg); });
+      {
+        UI::PrerequisiteGuard actionGuard{
+            Fwg::PrerequisiteChecker::canGenerateSuperSegments(fwg, cfg)};
+        if (UI::Elements::ImportantStepButton("Generate SuperSegments",
+                                              ImVec2(220, 0))) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg]() { return fwg.genSuperSegments(cfg); });
+        }
       }
 
       if (uiContext.triggeredDrag) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg, &uiContext]() {
-              auto evaluationAreas =
-                  Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
-                      fwg.terrainData.landMask);
-              if (cfg.areaConfig.common.inputMode ==
-                  Fwg::Areas::AreaInputType::SOLID) {
-                auto image = Fwg::IO::Reader::readGenericImageWithBorders(
-                    uiContext.draggedFile, cfg.imageReadContext(),
-                    evaluationAreas);
-                if (image.size() == 0) {
-                  return false;
+        UI::PrerequisiteGuard importGuard{
+            Fwg::PrerequisiteChecker::canLoadSuperSegments(fwg, cfg)};
+        if (importGuard.ready()) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg, &uiContext]() {
+                auto evaluationAreas =
+                    Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                        fwg.terrainData.landMask);
+                if (cfg.areaConfig.common.inputMode ==
+                    Fwg::Areas::AreaInputType::SOLID) {
+                  auto image = Fwg::IO::Reader::readGenericImageWithBorders(
+                      uiContext.draggedFile, cfg.imageReadContext(),
+                      evaluationAreas);
+                  if (image.size() == 0) {
+                    return false;
+                  }
+                  if (!fwg.loadSuperSegments(cfg, image))
+                    return false;
+                } else {
+                  auto image = Fwg::IO::Reader::readGenericImage(
+                      uiContext.draggedFile, cfg.imageReadContext());
+                  if (image.size() == 0) {
+                    return false;
+                  }
+                  Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
+                      image, evaluationAreas);
+                  Fwg::Gfx::Filter::fillBlackPixelsByArea(image,
+                                                          evaluationAreas);
+                  if (!fwg.loadSuperSegments(cfg, image))
+                    return false;
                 }
-                if (!fwg.loadSuperSegments(cfg, image))
-                  return false;
-              } else {
-                auto image = Fwg::IO::Reader::readGenericImage(
-                    uiContext.draggedFile, cfg.imageReadContext());
-                if (image.size() == 0) {
-                  return false;
-                }
-                Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
-                    image, evaluationAreas);
-                Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
-                if (!fwg.loadSuperSegments(cfg, image))
-                  return false;
-              }
-              return true;
-            },
-            [&uiContext](TaskResult::Outcome) {
-              uiContext.triggeredDrag = false;
-            });
+                return true;
+              },
+              [&uiContext](TaskResult::Outcome) {
+                uiContext.triggeredDrag = false;
+              });
+        } else {
+          uiContext.triggeredDrag = false;
+        }
       }
     }
 
@@ -161,7 +173,8 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                     UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Segments")) {
     if (uiContext.tabSwitchEvent()) {
-      uiContext.imageContext.updateImage(0, fwg.segmentMap);
+      uiContext.imageContext.updateImage(
+          0, fwg.hasSegmentImageData(cfg) ? fwg.segmentMap : Gfx::Image{});
       uiContext.imageContext.updateImage(1, fwg.errorMap);
     }
     uiContext.helpContext.showHelpTextBox("Segments");
@@ -172,11 +185,11 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
 
-      grid.AddInputDouble("Cost Influence",
-                          &cfg.areaConfig.segments.costInfluence, 0.0, 10.0);
-      grid.AddInputDouble("Distance Influence",
-                          &cfg.areaConfig.segments.distanceInfluence, 0.0,
-                          10.0);
+      grid.AddInputFloat("Cost Influence",
+                         &cfg.areaConfig.segments.costInfluence, 0.0f, 10.0f);
+      grid.AddInputFloat("Distance Influence",
+                         &cfg.areaConfig.segments.distanceInfluence, 0.0f,
+                         10.0f);
       grid.AddInputInt("River Border Fix Threshold",
                        &cfg.areaConfig.segments.removeChunkThreshold, 1, 10000);
 
@@ -193,13 +206,20 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::climate(fwg.climateData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::habitability(fwg.climateData),
-         UI::PrerequisiteChecker::superSegments(fwg.areaData)});
+    {
+      UI::PrerequisiteGuard generationGuard{
+          Fwg::PrerequisiteChecker::canGenerateSegments(fwg, cfg)};
+      if (UI::Elements::ImportantStepButton("Generate Segments",
+                                            ImVec2(220, 0))) {
+        uiContext.asyncContext.runAsync(
+            [&fwg, &cfg]() { return fwg.genSegments(cfg); },
+            [&uiContext](TaskResult::Outcome) {
+              uiContext.generationContext.modifiedAreas = true;
+            });
+      }
+    }
 
-    if (guard.ready()) {
+    {
       ImGui::SeparatorText("Segment Statistics");
 
       {
@@ -212,31 +232,28 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
       ImGui::Spacing();
 
-      if (UI::Elements::Button("Generate Template Images", false,
-                               ImVec2(220, 0))) {
-        Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
-                                              fwg.worldMap, false, true, false,
-                                              cfg.visualizationContext());
+      {
+        UI::PrerequisiteGuard actionGuard{Fwg::PrerequisiteChecker::check(
+            {Fwg::PrerequisiteChecker::climate(fwg, cfg),
+             Fwg::PrerequisiteChecker::landforms(fwg, cfg),
+             Fwg::PrerequisiteChecker::habitability(fwg, cfg),
+             Fwg::PrerequisiteChecker::superSegments(fwg, cfg)})};
+        if (UI::Elements::Button("Generate Template Images", false,
+                                 ImVec2(220, 0))) {
+          Fwg::Gfx::Land::displaySimpleLandType(
+              fwg.terrainData, fwg.areaData, fwg.worldMap, false, true, false,
+              cfg.visualizationContext());
+        }
       }
 
       ImGui::SameLine();
-
-      if (UI::Elements::ImportantStepButton("Generate Segments",
-                                            ImVec2(220, 0))) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg]() { return fwg.genSegments(cfg); },
-            [&uiContext](TaskResult::Outcome) {
-              uiContext.generationContext.modifiedAreas = true;
-            });
+      bool fixRiverBordersClicked = false;
+      {
+        UI::PrerequisiteGuard repairGuard{
+            Fwg::PrerequisiteChecker::canFixSegmentBordersAtRivers(fwg, cfg)};
+        fixRiverBordersClicked = UI::Elements::ImportantStepButton(
+            "Fix River Borders", ImVec2(220, 0));
       }
-
-      ImGui::SameLine();
-      const bool canFixRiverBorders =
-          !fwg.areaData.segments.empty() && !fwg.climateData.rivers.empty();
-      ImGui::BeginDisabled(!canFixRiverBorders);
-      const bool fixRiverBordersClicked = UI::Elements::ImportantStepButton(
-          "Fix River Borders", ImVec2(220, 0));
-      ImGui::EndDisabled();
       if (fixRiverBordersClicked) {
         uiContext.asyncContext.runAsync(
             [&fwg, &cfg]() {
@@ -250,35 +267,40 @@ void showSegmentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       }
 
       if (uiContext.triggeredDrag) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg, &uiContext]() {
-              const auto evaluationAreas =
-                  Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
-                      fwg.terrainData.landMask);
-              if (cfg.areaConfig.common.inputMode ==
-                  Fwg::Areas::AreaInputType::SOLID) {
-                if (!fwg.loadSegments(
-                        cfg, Fwg::IO::Reader::readGenericImageWithBorders(
-                                 uiContext.draggedFile, cfg.imageReadContext(),
-                                 evaluationAreas)))
-                  return false;
-              } else {
-                auto image = Fwg::IO::Reader::readGenericImage(
-                    uiContext.draggedFile, cfg.imageReadContext());
-                Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
-                    image, evaluationAreas);
-                Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
-                if (!fwg.loadSegments(cfg, image))
-                  return false;
-              }
-              fwg.segmentMap = Fwg::Gfx::Segments::displaySegments(
-                  fwg.areaData.segments, fwg.areaGenerationContext(cfg));
-              return true;
-            },
-            [&uiContext](TaskResult::Outcome) {
-              uiContext.triggeredDrag = false;
-              uiContext.generationContext.modifiedAreas = true;
-            });
+        UI::PrerequisiteGuard importGuard{
+            Fwg::PrerequisiteChecker::canLoadSegments(fwg, cfg)};
+        if (importGuard.ready()) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg, &uiContext]() {
+                const auto evaluationAreas =
+                    Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                        fwg.terrainData.landMask);
+                if (cfg.areaConfig.common.inputMode ==
+                    Fwg::Areas::AreaInputType::SOLID) {
+                  if (!fwg.loadSegments(
+                          cfg, Fwg::IO::Reader::readGenericImageWithBorders(
+                                   uiContext.draggedFile,
+                                   cfg.imageReadContext(), evaluationAreas)))
+                    return false;
+                } else {
+                  auto image = Fwg::IO::Reader::readGenericImage(
+                      uiContext.draggedFile, cfg.imageReadContext());
+                  Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
+                      image, evaluationAreas);
+                  Fwg::Gfx::Filter::fillBlackPixelsByArea(image,
+                                                          evaluationAreas);
+                  if (!fwg.loadSegments(cfg, image))
+                    return false;
+                }
+                return true;
+              },
+              [&uiContext](TaskResult::Outcome) {
+                uiContext.triggeredDrag = false;
+                uiContext.generationContext.modifiedAreas = true;
+              });
+        } else {
+          uiContext.triggeredDrag = false;
+        }
       }
     }
 
@@ -289,8 +311,10 @@ int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                      UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Provinces")) {
     if (uiContext.tabSwitchEvent()) {
-      uiContext.imageContext.updateImage(0, fwg.provinceMap);
-      uiContext.imageContext.updateImage(1, fwg.segmentMap);
+      uiContext.imageContext.updateImage(
+          0, fwg.hasProvinceImageData(cfg) ? fwg.provinceMap : Gfx::Image{});
+      uiContext.imageContext.updateImage(
+          1, fwg.hasSegmentImageData(cfg) ? fwg.segmentMap : Gfx::Image{});
     }
     uiContext.helpContext.showHelpTextBox("Provinces");
 
@@ -315,62 +339,74 @@ int showProvincesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::climate(fwg.climateData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::habitability(fwg.climateData),
-         UI::PrerequisiteChecker::superSegments(fwg.areaData),
-         UI::PrerequisiteChecker::segments(fwg.areaData)});
 
-    if (guard.ready()) {
-      if (UI::Elements::Button("Generate Template Images", false,
-                               ImVec2(220, 0))) {
-        Fwg::Gfx::Land::displaySimpleLandType(fwg.terrainData, fwg.areaData,
-                                              fwg.worldMap, false, false, true,
-                                              cfg.visualizationContext());
+    {
+      {
+        UI::PrerequisiteGuard actionGuard{Fwg::PrerequisiteChecker::check(
+            {Fwg::PrerequisiteChecker::climate(fwg, cfg),
+             Fwg::PrerequisiteChecker::landforms(fwg, cfg),
+             Fwg::PrerequisiteChecker::habitability(fwg, cfg),
+             Fwg::PrerequisiteChecker::superSegments(fwg, cfg),
+             Fwg::PrerequisiteChecker::segments(fwg, cfg)})};
+        if (UI::Elements::Button("Generate Template Images", false,
+                                 ImVec2(220, 0))) {
+          Fwg::Gfx::Land::displaySimpleLandType(
+              fwg.terrainData, fwg.areaData, fwg.worldMap, false, false, true,
+              cfg.visualizationContext());
+        }
       }
 
       ImGui::SameLine();
 
-      if (UI::Elements::ImportantStepButton("Generate Provinces",
-                                            ImVec2(220, 0))) {
-        uiContext.generationContext.modifiedAreas = true;
-        uiContext.asyncContext.runAsync([&fwg, &cfg]() {
-          if (!fwg.genProvinces(cfg)) {
-            return false;
-          }
-          return true;
-        });
+      {
+        UI::PrerequisiteGuard actionGuard{
+            Fwg::PrerequisiteChecker::canGenerateProvinces(fwg, cfg)};
+        if (UI::Elements::ImportantStepButton("Generate Provinces",
+                                              ImVec2(220, 0))) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg]() { return fwg.genProvinces(cfg); },
+              [&uiContext](TaskResult::Outcome) {
+                uiContext.generationContext.modifiedAreas = true;
+              });
+        }
       }
 
       if (uiContext.triggeredDrag) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg, &uiContext]() {
-              auto evaluationAreas =
-                  Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
-                      fwg.terrainData.landMask);
-              if (cfg.areaConfig.common.inputMode ==
-                  Fwg::Areas::AreaInputType::SOLID) {
-                if (!fwg.loadProvinces(
-                        cfg, Fwg::IO::Reader::readGenericImageWithBorders(
-                                 uiContext.draggedFile, cfg.imageReadContext(),
-                                 evaluationAreas)))
-                  return false;
-              } else {
-                auto image = Fwg::IO::Reader::readGenericImage(
-                    uiContext.draggedFile, cfg.imageReadContext());
-                Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
-                    image, evaluationAreas);
-                Fwg::Gfx::Filter::fillBlackPixelsByArea(image, evaluationAreas);
-                if (!fwg.loadProvinces(cfg, image))
-                  return false;
-              }
-              return true;
-            },
-            [&uiContext](TaskResult::Outcome) {
-              uiContext.triggeredDrag = false;
-              uiContext.generationContext.modifiedAreas = true;
-            });
+        UI::PrerequisiteGuard importGuard{
+            Fwg::PrerequisiteChecker::canLoadProvinces(fwg, cfg)};
+        if (importGuard.ready()) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg, &uiContext]() {
+                auto evaluationAreas =
+                    Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                        fwg.terrainData.landMask);
+                if (cfg.areaConfig.common.inputMode ==
+                    Fwg::Areas::AreaInputType::SOLID) {
+                  if (!fwg.loadProvinces(
+                          cfg, Fwg::IO::Reader::readGenericImageWithBorders(
+                                   uiContext.draggedFile,
+                                   cfg.imageReadContext(), evaluationAreas)))
+                    return false;
+                } else {
+                  auto image = Fwg::IO::Reader::readGenericImage(
+                      uiContext.draggedFile, cfg.imageReadContext());
+                  Fwg::Gfx::Filter::colouriseAreaBorderInputByBordersOnly(
+                      image, evaluationAreas);
+                  Fwg::Gfx::Filter::fillBlackPixelsByArea(image,
+                                                          evaluationAreas);
+                  if (!fwg.loadProvinces(cfg, image))
+                    return false;
+                }
+                return true;
+              },
+              [&uiContext](TaskResult::Outcome) {
+                uiContext.triggeredDrag = false;
+                uiContext.generationContext.modifiedAreas = true;
+                uiContext.imageContext.resetTexture();
+              });
+        } else {
+          uiContext.triggeredDrag = false;
+        }
       }
     }
 
@@ -384,35 +420,22 @@ int showRegionTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     uiContext.tabSwitchEvent();
     uiContext.helpContext.showHelpTextBox("Regions");
 
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::habitability(fwg.climateData),
-         UI::PrerequisiteChecker::provinceMap(fwg.provinceMap)});
-
-    if (guard.ready()) {
+    {
       ImGui::SeparatorText("Generate a region map");
 
-      if (ImGui::Button("Generate Region Map from Segments and Provinces")) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg]() { return fwg.genRegions(cfg); });
+      {
+        UI::PrerequisiteGuard actionGuard{
+            Fwg::PrerequisiteChecker::canGenerateRegions(fwg, cfg)};
+        if (ImGui::Button("Generate Region Map from Segments and Provinces")) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg]() { return fwg.genRegions(cfg); });
+        }
       }
       ImGui::Text("The map has %i regions",
                   static_cast<int>(fwg.areaData.regions.size()));
 
       if (uiContext.triggeredDrag) {
-        if (fwg.provinceMap.initialised()) {
-          try {
-            // fwg.loadRegions(cfg, uiContext.draggedFile);
-            Fwg::Utils::Logging::logLine(
-                "If you want to load regions, do it in the segments tab.");
-          } catch (std::exception &e) {
-            Fwg::Utils::Logging::logLine(
-                "Couldn't load regions, fix input or try again");
-            fwg.regionMap = Fwg::IO::Reader::readGenericImage(
-                uiContext.draggedFile, cfg.imageReadContext());
-          }
-        }
+        fwg.loadRegions(cfg, uiContext.draggedFile);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
       }
@@ -428,10 +451,7 @@ int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Continents")) {
     if (uiContext.tabSwitchEvent()) {
       if (hasCurrentVisualizationDimensions(cfg, "continents") &&
-          cfg.processingArea > 0 && !fwg.areaData.provinces.empty() &&
-          !fwg.areaData.regions.empty() &&
-          fwg.terrainData.detailedHeightMap.size() ==
-              static_cast<size_t>(cfg.processingArea)) {
+          fwg.hasContinentsData(cfg) && fwg.hasHeightmapData(cfg)) {
         uiContext.imageContext.updateImage(
             0, Fwg::Gfx::simpleContinents(fwg.areaData.continents,
                                           fwg.areaData.seaBodies,
@@ -458,42 +478,45 @@ int showContinentTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     }
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::climate(fwg.climateData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::habitability(fwg.climateData),
-         UI::PrerequisiteChecker::superSegments(fwg.areaData),
-         UI::PrerequisiteChecker::segments(fwg.areaData),
-         UI::PrerequisiteChecker::provinces(fwg.areaData)});
 
-    if (guard.ready()) {
-      if (UI::Elements::ImportantStepButton("Generate Continents",
-                                            ImVec2(220, 0)) ||
-          (fwg.areaData.continents.empty() && !uiContext.asyncContext.busy())) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg]() { return fwg.genContinents(cfg); },
-            [&uiContext](TaskResult::Outcome) {
-              uiContext.generationContext.modifiedAreas = true;
-            });
+    {
+      {
+        UI::PrerequisiteGuard actionGuard{
+            Fwg::PrerequisiteChecker::canGenerateContinents(fwg, cfg)};
+        if (UI::Elements::ImportantStepButton("Generate Continents",
+                                              ImVec2(220, 0))) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg]() { return fwg.genContinents(cfg); },
+              [&uiContext](TaskResult::Outcome) {
+                uiContext.generationContext.modifiedAreas = true;
+              });
+        }
       }
 
       if (uiContext.triggeredDrag) {
-        uiContext.asyncContext.runAsync(
-            [&fwg, &cfg, &uiContext]() {
-              auto evaluationAreas =
-                  Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
-                      fwg.terrainData.landMask);
-              if (!fwg.loadContinents(
-                      cfg, Fwg::IO::Reader::readGenericImageWithBorders(
-                               uiContext.draggedFile, cfg.imageReadContext(),
-                               evaluationAreas)))
-                return false;
-              return true;
-            },
-            [&uiContext](TaskResult::Outcome) {
-              uiContext.triggeredDrag = false;
-              uiContext.generationContext.modifiedAreas = true;
-            });
+        UI::PrerequisiteGuard importGuard{
+            Fwg::PrerequisiteChecker::canLoadContinents(fwg, cfg)};
+        if (importGuard.ready()) {
+          uiContext.asyncContext.runAsync(
+              [&fwg, &cfg, &uiContext]() {
+                auto evaluationAreas =
+                    Fwg::UI::Utils::Masks::getLandmaskEvaluationAreas(
+                        fwg.terrainData.landMask);
+                if (!fwg.loadContinents(
+                        cfg, Fwg::IO::Reader::readGenericImageWithBorders(
+                                 uiContext.draggedFile, cfg.imageReadContext(),
+                                 evaluationAreas)))
+                  return false;
+                return true;
+              },
+              [&uiContext](TaskResult::Outcome) {
+                uiContext.triggeredDrag = false;
+                uiContext.generationContext.modifiedAreas = true;
+                uiContext.imageContext.resetTexture();
+              });
+        } else {
+          uiContext.triggeredDrag = false;
+        }
       }
     }
 

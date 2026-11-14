@@ -23,8 +23,7 @@ private:
       std::vector<Fwg::Gfx::Colour> &imageData,
       const std::vector<Fwg::Terrain::LandformDefinition> &landformDefinitions,
       UI::UIContext &uiContext);
-  bool analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                      const Fwg::Gfx::Image &landInput,
+  bool analyseLandMap(Fwg::Cfg &cfg, const Fwg::Gfx::Image &inputImage,
                       int &amountClassificationsNeeded);
 
 public:

@@ -10,7 +10,7 @@ void renderOperationParameters(Fwg::Terrain::HeightmapOperation &operation);
 void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext);
 } // namespace Detail
 
-void configureLandElevationFactors(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
+void configureLandElevationFactors(Fwg::Cfg &cfg);
 void loadHeightmapConfigs(UIContext &uiContext);
 int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                      UIContext &uiContext);

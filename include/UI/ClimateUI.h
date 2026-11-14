@@ -19,11 +19,9 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext);
 namespace Input {
 bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData,
                                   UIContext &uiContext);
-bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                       const Fwg::Gfx::Image &climateInput,
+bool analyzeClimateMap(Fwg::Cfg &cfg, const Fwg::Gfx::Image &climateInput,
                        UIContext &uiContext);
-bool climateMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                    UIContext &uiContext);
+bool climateMapping(Fwg::Cfg &cfg, UIContext &uiContext);
 int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                         UIContext &uiContext);
 

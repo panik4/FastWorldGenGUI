@@ -26,6 +26,10 @@ protected:
   Fwg::UI::LandUI landUI;
   float uiScaleMultiplier = 1.0f;
   bool closingAfterTask = false;
+  int requestedWidth = 0;
+  int requestedHeight = 0;
+  int appliedWidth = 0;
+  int appliedHeight = 0;
 
   void writeCurrentlyDisplayedImage(Fwg::Cfg &cfg) {
     if (uiContext.imageContext.activeImages[0].size() &&
@@ -38,7 +42,7 @@ protected:
   }
 
   void initAllowedInput(
-      Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
+      Fwg::Cfg &cfg,
       std::vector<Terrain::LandformDefinition> &landformDefinitions);
 
   virtual int showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
@@ -46,12 +50,13 @@ protected:
   virtual std::string windowTitle() const;
   virtual std::string frameTitle() const;
   virtual void onWindowReady();
+  virtual void onProjectLoaded() {}
   virtual void renderTopBar();
   virtual void renderSettingsTabs(Fwg::Cfg &cfg);
   void renderGenericControls(Fwg::Cfg &cfg);
   virtual void renderGenericContents(Fwg::Cfg &cfg);
   int showElevationTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
-  int showFwgConfigure(Fwg::Cfg &cfg);
+  int showFwgConfigure(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 
   int showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg);
 

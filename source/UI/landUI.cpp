@@ -100,7 +100,7 @@ void LandUI::RenderScrollableLandInput(
   // Begin the scrollable area
   ImGui::BeginChild("ScrollingRegion",
                     ImVec2(ImGui::GetContentRegionAvail().x,
-                           ImGui::GetContentRegionAvail().y * 0.8),
+                           ImGui::GetContentRegionAvail().y * 0.8f),
                     false, ImGuiWindowFlags_HorizontalScrollbar);
 
   // --- Selection state ---
@@ -307,8 +307,7 @@ void LandUI::RenderScrollableLandInput(
   ImGui::EndChild();
 }
 
-bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                            const Fwg::Gfx::Image &landInput,
+bool LandUI::analyseLandMap(Fwg::Cfg &cfg, const Fwg::Gfx::Image &inputImage,
                             int &amountClassificationsNeeded) {
   landInputColours.clear();
   amountClassificationsNeeded = 0;
@@ -320,7 +319,7 @@ bool LandUI::analyseLandMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   static bool classificationNeeded = false;
   auto imageIndex = 0;
   // init and count colours
-  for (auto &colour : landInput.imageData) {
+  for (auto &colour : inputImage.imageData) {
     // first count classifications
     if (landInputColours.contains(colour) &&
         landInputColours[colour].pixels.size() == 0 &&
@@ -405,7 +404,7 @@ void LandUI::complexLandMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     // always reload the classified map from disk
     Fwg::Gfx::Png::save(landInput, cfg.mapsPath + "classifiedLandInput.png",
                         false);
-    analyseLandMap(cfg, fwg, landInput, amountClassificationsNeeded);
+    analyseLandMap(cfg, landInput, amountClassificationsNeeded);
     if (!amountClassificationsNeeded) {
       fwg.genHeightFromInput(cfg, cfg.mapsPath + "classifiedLandInput.png",
                              cfg.terrainConfig.landInputMode);

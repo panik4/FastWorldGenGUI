@@ -1,4 +1,5 @@
 #include "UI/ClimateUI.h"
+#include "utils/ContainerUtils.h"
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -109,7 +110,8 @@ void installHumidityPreview(const Fwg::Cfg &config,
                             const Fwg::FastWorldGenerator &generator,
                             UIContext &uiContext) {
   uiContext.imageContext.updateImage(
-      0, hasCurrentVisualizationDimensions(config, "humidity")
+      0, generator.hasHumidityData(config) &&
+                 hasCurrentVisualizationDimensions(config, "humidity")
              ? Fwg::Gfx::Climate::displayHumidity(
                    generator.climateData, config.climateGenerationContext())
              : Fwg::Gfx::Image());
@@ -408,7 +410,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
 
         pipeline.operations.push_back(newOp);
         uiContext.generationContext.selectedClimateOperationIndex =
-            pipeline.operations.size() - 1;
+            Fwg::Utils::Containers::checkedSizeToInt(
+                pipeline.operations.size() - 1);
         ImGui::CloseCurrentPopup();
       }
 
@@ -455,9 +458,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
     ImGui::Spacing();
 
     // Editable name
-    char nameBuf[128];
-    strncpy(nameBuf, operation.name.c_str(), sizeof(nameBuf) - 1);
-    nameBuf[sizeof(nameBuf) - 1] = '\0';
+    char nameBuf[128]{};
+    operation.name.copy(nameBuf, sizeof(nameBuf) - 1);
 
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputText("##climateopname", nameBuf, sizeof(nameBuf))) {
@@ -655,8 +657,7 @@ bool RenderScrollableClimateInput(std::vector<Fwg::Gfx::Colour> &imageData,
   return updated;
 }
 
-bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                       const Fwg::Gfx::Image &climateInput,
+bool analyzeClimateMap(Fwg::Cfg &cfg, const Fwg::Gfx::Image &climateInput,
                        UIContext &uiContext) {
   uiContext.climateUI.climateInputColours.clear();
   uiContext.climateUI.amountClassificationsNeeded = 0;
@@ -728,8 +729,7 @@ bool analyzeClimateMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   return !classificationNeeded;
 }
 
-bool climateMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
-                    UIContext &uiContext) {
+bool climateMapping(Fwg::Cfg &cfg, UIContext &uiContext) {
   bool updated = false;
 
   // Update names of entries based on classification
@@ -763,7 +763,7 @@ bool climateMapping(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   }
   // Re-analyze
   else if (ImGui::Button("Analyze Input") || uiContext.climateUI.analyze) {
-    analyzeClimateMap(cfg, fwg, uiContext.climateUI.climateInputMap, uiContext);
+    analyzeClimateMap(cfg, uiContext.climateUI.climateInputMap, uiContext);
     uiContext.climateUI.analyze = false;
   }
 
@@ -780,19 +780,14 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
       uiContext.imageContext.updateImage(0,
                                          uiContext.climateUI.climateInputMap);
       uiContext.imageContext.updateImage(1, Fwg::Gfx::Image());
-      if (fwg.worldMap.initialised()) {
+      if (fwg.hasWorldImageData(cfg)) {
         uiContext.imageContext.updateImage(1, fwg.worldMap);
       }
     }
     ImGui::SeparatorText("This step is OPTIONAL! You can also generate a "
                          "random climate in the next tab");
     uiContext.helpContext.showHelpTextBox("Climate Input");
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-         UI::PrerequisiteChecker::landforms(fwg.terrainData),
-         UI::PrerequisiteChecker::landMask(fwg.terrainData)});
-
-    if (guard.ready()) {
+    {
       if (uiContext.triggeredDrag) {
         uiContext.triggeredDrag = false;
         uiContext.asyncContext.runAsync(
@@ -857,7 +852,7 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         // Wrap climate mapping in a child window with calculated height
         ImGui::BeginChild("ClimateMappingSection", ImVec2(0, availableHeight),
                           false, ImGuiWindowFlags_None);
-        if (Fwg::UI::Climate::Input::climateMapping(cfg, fwg, uiContext)) {
+        if (Fwg::UI::Climate::Input::climateMapping(cfg, uiContext)) {
           uiContext.imageContext.resetTexture();
         }
         ImGui::EndChild(); // ClimateMappingSection
@@ -866,6 +861,8 @@ int showClimateInputTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     Detail::configurePipelineEditor(cfg, uiContext);
 
+    UI::PrerequisiteGuard climateGuard{
+        Fwg::PrerequisiteChecker::canLoadClimate(fwg, cfg)};
     // Classification guard
     auto classificationGuard =
         UI::PrerequisiteChecker::requireSilent({UI::Prerequisite{
@@ -903,10 +900,12 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         "October", "November", "December"};
     const auto refreshPreview = [&]() {
       uiContext.imageContext.updateImage(
-          0, hasCurrentVisualizationDimensions(cfg, "temperature")
+          0, (previewSelection == 0 ? fwg.hasTemperatureData(cfg)
+                                    : fwg.hasSeasonalTemperatureData(cfg)) &&
+                     hasCurrentVisualizationDimensions(cfg, "temperature")
                  ? Fwg::Gfx::Climate::displayTemperature(
-                       fwg.climateData, cfg.climateConfig,
-                       cfg.climateGenerationContext(), previewSelection - 1)
+                       fwg.climateData, cfg.climateGenerationContext(),
+                       previewSelection - 1)
                  : Fwg::Gfx::Image());
     };
     if (uiContext.tabSwitchEvent()) {
@@ -926,7 +925,8 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           &cfg.climateConfig.maximumSeasonalAmplitudeCelsius, 0.0, 80.0);
       settingsChanged |= temperatureSettings.AddInputDouble(
           "Elevation cooling (°C/m)",
-          &cfg.climateConfig.elevationCoolingCelsiusPerMeter, 0.0, 0.1);
+          &cfg.climateConfig.elevationCoolingCelsiusPerMeter, 0.0, 0.1, 0.0005,
+          0.001);
     }
     if (settingsChanged)
       refreshPreview();
@@ -940,9 +940,8 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::Spacing();
 
     {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::climateOperation(
-              fwg, cfg, ClimateOperation::Temperature)});
+      UI::PrerequisiteGuard guard{
+          Fwg::PrerequisiteChecker::canGenerateTemperatures(fwg, cfg)};
       if (!cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton("Generate Temperature Map",
                                             ImVec2(280, 0))) {
@@ -961,21 +960,30 @@ int showTemperatureMap(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
             },
             [refreshPreview](TaskResult::Outcome) { refreshPreview(); });
       }
+    }
 
-      if (!fwg.climateData.temperatures.annualMeanCelsius.empty() &&
-          UI::Elements::ImportantStepButton("Rebuild Seasonal Metadata",
+    {
+      UI::PrerequisiteGuard actionGuard{
+          Fwg::PrerequisiteChecker::canRebuildTemperatureSeasonality(fwg, cfg)};
+      if (UI::Elements::ImportantStepButton("Rebuild Seasonal Metadata",
                                             ImVec2(280, 0))) {
         uiContext.asyncContext.runAsync(
             [&fwg, &cfg]() { return fwg.rebuildTemperatureSeasonality(cfg); },
             [refreshPreview](TaskResult::Outcome) { refreshPreview(); });
       }
+    }
 
-      if (uiContext.triggeredDrag) {
-        fwg.importClimateImage(cfg, ClimateProduct::Temperature,
-                               uiContext.draggedFile, applyAltitudeEffect);
+    if (uiContext.triggeredDrag) {
+      UI::PrerequisiteGuard importGuard{
+          Fwg::PrerequisiteChecker::canLoadTemperatures(fwg, cfg,
+                                                        applyAltitudeEffect)};
+      if (importGuard.ready()) {
+        fwg.loadTemperatures(cfg, uiContext.draggedFile, applyAltitudeEffect);
         uiContext.triggeredDrag = false;
         refreshPreview();
         uiContext.imageContext.resetTexture();
+      } else {
+        uiContext.triggeredDrag = false;
       }
     }
 
@@ -1008,9 +1016,8 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     ImGui::Spacing();
 
     {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::climateOperation(
-              fwg, cfg, ClimateOperation::Humidity)});
+      UI::PrerequisiteGuard guard{
+          Fwg::PrerequisiteChecker::canGenerateHumidity(fwg, cfg)};
       if (!cfg.climateConfig.fantasyClimate &&
           UI::Elements::ImportantStepButton("Generate Humidity Map",
                                             ImVec2(220, 0))) {
@@ -1026,12 +1033,17 @@ int showHumidityTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           return fwg.genHumidity(cfg);
         });
       }
-
-      if (uiContext.triggeredDrag) {
-        fwg.importClimateImage(cfg, ClimateProduct::Humidity,
-                               uiContext.draggedFile, applyElevationEffect);
+    }
+    if (uiContext.triggeredDrag) {
+      UI::PrerequisiteGuard importGuard{
+          Fwg::PrerequisiteChecker::canLoadHumidity(fwg, cfg,
+                                                    applyElevationEffect)};
+      if (importGuard.ready()) {
+        fwg.loadHumidity(cfg, uiContext.draggedFile, applyElevationEffect);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
+      } else {
+        uiContext.triggeredDrag = false;
       }
     }
 
@@ -1188,10 +1200,7 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                  UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Rivers")) {
     if (uiContext.tabSwitchEvent()) {
-      const auto states = fwg.generationStateSnapshot();
-      const bool riversReady =
-          states.at(static_cast<std::size_t>(ClimateProduct::Rivers)).status ==
-          GenerationStateTracker::Status::Ready;
+      const bool riversReady = fwg.hasRiversData(cfg);
       uiContext.imageContext.updateImage(
           0, riversReady && hasCurrentVisualizationDimensions(cfg, "river")
                  ? Gfx::riverMap(fwg.terrainData.detailedHeightMap,
@@ -1209,14 +1218,15 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     {
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
-      grid.AddText("River Count", "%d", (int)fwg.climateData.rivers.size());
+      grid.AddText("River Count", "%d",
+                   fwg.hasRiversData(cfg) ? (int)fwg.climateData.rivers.size()
+                                          : 0);
     }
 
     ImGui::Spacing();
     {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::climateOperation(
-              fwg, cfg, ClimateOperation::Rivers)});
+      UI::PrerequisiteGuard guard{
+          Fwg::PrerequisiteChecker::canGenerateRivers(fwg, cfg)};
       if (UI::Elements::ImportantStepButton("Generate River Map",
                                             ImVec2(200, 0))) {
         uiContext.asyncContext.runAsync(
@@ -1230,12 +1240,18 @@ int showRiverTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           return fwg.genRivers(cfg);
         });
       }
-
-      if (uiContext.triggeredDrag) {
-        fwg.importClimateImage(cfg, ClimateProduct::Rivers,
-                               uiContext.draggedFile, false,
-                               uiContext.blueMaskRiverImport);
+    }
+    if (uiContext.triggeredDrag) {
+      UI::PrerequisiteGuard importGuard{
+          Fwg::PrerequisiteChecker::canLoadRivers(fwg, cfg)};
+      if (importGuard.ready()) {
+        if (uiContext.blueMaskRiverImport)
+          fwg.loadRiversFromBlueMask(cfg, uiContext.draggedFile);
+        else
+          fwg.loadRivers(cfg, uiContext.draggedFile);
         uiContext.imageContext.resetTexture();
+        uiContext.triggeredDrag = false;
+      } else {
         uiContext.triggeredDrag = false;
       }
     }
@@ -1249,27 +1265,33 @@ int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Climate Zones")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.updateImage(
-          0, hasCurrentVisualizationDimensions(cfg, "climate")
+          0, fwg.hasClimateClassificationData(cfg) &&
+                     hasCurrentVisualizationDimensions(cfg, "climate")
                  ? Fwg::Gfx::Climate::displayClimate(
                        fwg.climateData, false, cfg.climateConfig,
                        cfg.climateGenerationContext())
                  : Fwg::Gfx::Image());
-      uiContext.imageContext.updateImage(1, fwg.worldMap);
+      uiContext.imageContext.updateImage(
+          1, fwg.hasWorldImageData(cfg) ? fwg.worldMap : Fwg::Gfx::Image{});
     }
 
     uiContext.helpContext.showHelpTextBox("Climate Gen");
     ImGui::SeparatorText("Generate climate map");
 
     {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::climateOperation(
-              fwg, cfg, ClimateOperation::Classification)});
+      UI::PrerequisiteGuard guard{
+          Fwg::PrerequisiteChecker::canGenerateClimate(fwg, cfg)};
       if (ImGui::Button(
               "Generate Climate Zones from Temperature and Heightmap Data")) {
         uiContext.asyncContext.runAsync(
             [&fwg, &cfg]() { return fwg.genClimate(cfg); });
-      } else if (cfg.climateConfig.fantasyClimate &&
-                 ImGui::Button("Generate completely random fantasy climate")) {
+      }
+    }
+
+    if (cfg.climateConfig.fantasyClimate) {
+      UI::PrerequisiteGuard guard{
+          Fwg::PrerequisiteChecker::canGenerateWholeClimate(fwg, cfg)};
+      if (ImGui::Button("Generate completely random fantasy climate")) {
         uiContext.asyncContext.runAsync([&fwg, &cfg]() {
           cfg.randomSeed = true;
           cfg.reRandomize();
@@ -1278,12 +1300,12 @@ int showClimateZonesTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           return fwg.genClimate(cfg);
         });
       }
+    }
 
-      if (uiContext.triggeredDrag) {
-        Fwg::Utils::Logging::logLine(
-            "Climate map loading is done in the Climate Input Tab");
-        uiContext.triggeredDrag = false;
-      }
+    if (uiContext.triggeredDrag) {
+      Fwg::Utils::Logging::logLine(
+          "Climate map loading is done in the Climate Input Tab");
+      uiContext.triggeredDrag = false;
     }
 
     ImGui::EndTabItem();
@@ -1296,13 +1318,15 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Forests")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.updateImage(
-          0, hasCurrentVisualizationDimensions(cfg, "climate")
+          0, fwg.hasClimateClassificationData(cfg) && fwg.hasForestsData(cfg) &&
+                     hasCurrentVisualizationDimensions(cfg, "climate")
                  ? Fwg::Gfx::Climate::displayClimate(
                        fwg.climateData, true, cfg.climateConfig,
                        cfg.climateGenerationContext())
                  : Fwg::Gfx::Image());
       uiContext.imageContext.updateImage(
-          1, hasCurrentVisualizationDimensions(cfg, "tree density")
+          1, fwg.hasForestsData(cfg) &&
+                     hasCurrentVisualizationDimensions(cfg, "tree density")
                  ? Fwg::Gfx::Climate::displayTreeDensity(
                        fwg.climateData, cfg.climateGenerationContext())
                  : Fwg::Gfx::Image());
@@ -1331,20 +1355,23 @@ int showTreeTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     ImGui::Spacing();
     {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::climateOperation(
-              fwg, cfg, ClimateOperation::Forests)});
+      UI::PrerequisiteGuard guard{
+          Fwg::PrerequisiteChecker::canGenerateForests(fwg, cfg)};
       if (UI::Elements::ImportantStepButton("Generate Forest Map",
                                             ImVec2(200, 0))) {
         uiContext.asyncContext.runAsync(
             [&fwg, &cfg]() { return fwg.genForests(cfg); });
       }
-
-      if (uiContext.triggeredDrag) {
-        fwg.importClimateImage(cfg, ClimateProduct::Forests,
-                               uiContext.draggedFile);
+    }
+    if (uiContext.triggeredDrag) {
+      UI::PrerequisiteGuard importGuard{
+          Fwg::PrerequisiteChecker::canLoadForests(fwg, cfg)};
+      if (importGuard.ready()) {
+        fwg.loadForests(cfg, uiContext.draggedFile);
         uiContext.triggeredDrag = false;
         uiContext.imageContext.resetTexture();
+      } else {
+        uiContext.triggeredDrag = false;
       }
     }
 
@@ -1357,8 +1384,10 @@ int showWastelandTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
                      UIContext &uiContext) {
   if (UI::Elements::BeginSubTabItem("Wasteland")) {
     if (uiContext.tabSwitchEvent()) {
-      uiContext.imageContext.updateImage(0, fwg.worldMap);
-      uiContext.imageContext.updateImage(1, fwg.worldMap);
+      uiContext.imageContext.updateImage(
+          0, fwg.hasWorldImageData(cfg) ? fwg.worldMap : Fwg::Gfx::Image{});
+      uiContext.imageContext.updateImage(
+          1, fwg.hasWorldImageData(cfg) ? fwg.worldMap : Fwg::Gfx::Image{});
     }
     uiContext.helpContext.showHelpTextBox("Wasteland");
     ImGui::SeparatorText("Generate wasteland map or drop it in");

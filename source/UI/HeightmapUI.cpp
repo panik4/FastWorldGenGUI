@@ -1,4 +1,5 @@
 #include "UI/HeightmapUI.h"
+#include "utils/ContainerUtils.h"
 #include <exception>
 #include <utility>
 
@@ -453,7 +454,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
 
         pipeline.operations.push_back(newOp);
         uiContext.generationContext.selectedOperationIndex =
-            pipeline.operations.size() - 1;
+            Fwg::Utils::Containers::checkedSizeToInt(
+                pipeline.operations.size() - 1);
         ImGui::CloseCurrentPopup();
       }
 
@@ -500,9 +502,8 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
     ImGui::Spacing();
 
     // Editable name
-    char nameBuf[128];
-    strncpy(nameBuf, operation.name.c_str(), sizeof(nameBuf) - 1);
-    nameBuf[sizeof(nameBuf) - 1] = '\0';
+    char nameBuf[128]{};
+    operation.name.copy(nameBuf, sizeof(nameBuf) - 1);
 
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputText("##opname", nameBuf, sizeof(nameBuf))) {
@@ -532,8 +533,7 @@ void configurePipelineEditor(Fwg::Cfg &cfg, UIContext &uiContext) {
 
 } // namespace Detail
 
-void configureLandElevationFactors(Fwg::Cfg &cfg,
-                                   Fwg::FastWorldGenerator &fwg) {
+void configureLandElevationFactors(Fwg::Cfg &cfg) {
   if (cfg.terrainConfig.landInputMode == Fwg::Terrain::InputMode::LANDFORM) {
     ImGui::SeparatorText("Land Elevation Factors");
     const float labelWidth = 10.0f;
@@ -543,7 +543,7 @@ void configureLandElevationFactors(Fwg::Cfg &cfg,
 
     auto addFactor = [&](const std::string &label, float &value) {
       ImGui::BeginGroup();
-      ImGui::Text("%-*s", (int)labelWidth, label);
+      ImGui::Text("%-*s", (int)labelWidth, label.c_str());
       ImGui::SameLine();
       ImGui::SetNextItemWidth(inputWidth);
       ImGui::InputFloat((std::string("##") + label).c_str(), &value, 0.01f,
@@ -587,7 +587,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Heightmap")) {
     if (uiContext.tabSwitchEvent()) {
 
-      if (fwg.terrainData.detailedHeightMap.size()) {
+      if (fwg.hasHeightmapData(cfg)) {
         auto heightmap = Fwg::Gfx::displayHeightMap(
             fwg.terrainData.detailedHeightMap, cfg.visualizationContext());
         uiContext.imageContext.updateImage(0, heightmap);
@@ -604,8 +604,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
               selectedLayer < selectedLayers.size() &&
               selectedLayers[selectedLayer].size() ==
                   static_cast<std::size_t>(cfg.processingArea) &&
-              fwg.terrainData.detailedHeightMap.size() ==
-                  static_cast<std::size_t>(cfg.processingArea)) {
+              fwg.hasHeightmapData(cfg)) {
             layerImage = Fwg::Gfx::Image(cfg.width, cfg.height, 24,
                                          selectedLayers[selectedLayer]);
           } else {
@@ -616,7 +615,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           uiContext.imageContext.updateImage(1, std::move(layerImage));
           updateLayer = false;
         } else {
-          if (fwg.terrainData.landMask.size()) {
+          if (fwg.hasAltitudeData(cfg)) {
             uiContext.imageContext.updateImage(
                 1, Fwg::Gfx::topographyMap(fwg.terrainData.altitudes, cfg.width,
                                            cfg.height));
@@ -737,7 +736,7 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
     ImGui::Spacing();
 
-    configureLandElevationFactors(cfg, fwg);
+    configureLandElevationFactors(cfg);
 
     ImGui::Spacing();
     ImGui::SeparatorText("Advanced Heightmap Settings");
@@ -849,7 +848,8 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
           newLayer.tanFactor = 0.0;
 
           currentLayers->push_back(newLayer);
-          selectedLayer = currentLayers->size() - 1;
+          selectedLayer = Fwg::Utils::Containers::checkedSizeToInt(
+              currentLayers->size() - 1);
         }
 
         if (currentLayers->size() > 0 &&
@@ -1007,14 +1007,18 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
         ImGui::SameLine();
       }
 
-      if (UI::Elements::Button(buttonLabel.c_str(), false, ImVec2(250, 0))) {
-        if (rerandomiseSeed) {
-          cfg.randomSeed = true;
-          cfg.reRandomize();
+      {
+        UI::PrerequisiteGuard actionGuard{
+            Fwg::PrerequisiteChecker::canGenerateLand(fwg, cfg)};
+        if (UI::Elements::Button(buttonLabel.c_str(), false, ImVec2(250, 0))) {
+          if (rerandomiseSeed) {
+            cfg.randomSeed = true;
+            cfg.reRandomize();
+          }
+          uiContext.asyncContext.runAsync(
+              [&fwg]() { return fwg.genLand(); },
+              [](TaskResult::Outcome) { updateLayer = true; });
         }
-        uiContext.asyncContext.runAsync(
-            [&fwg]() { return fwg.genLand(); },
-            [](TaskResult::Outcome) { updateLayer = true; });
       }
       if (UI::Elements::ImportantStepButton(
               "Generate Complete Heightmap from new seed", ImVec2(350, 0))) {
@@ -1040,8 +1044,13 @@ int showHeightmapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
 
       ImGui::SameLine();
 
-      if (UI::Elements::Button("Apply Detail Layers", false, ImVec2(250, 0))) {
-        uiContext.asyncContext.runAsync([&fwg]() { return fwg.genLand(); });
+      {
+        UI::PrerequisiteGuard actionGuard{
+            Fwg::PrerequisiteChecker::canGenerateLand(fwg, cfg)};
+        if (UI::Elements::Button("Apply Detail Layers", false,
+                                 ImVec2(250, 0))) {
+          uiContext.asyncContext.runAsync([&fwg]() { return fwg.genLand(); });
+        }
       }
       break;
     }
@@ -1135,19 +1144,15 @@ int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
   if (UI::Elements::BeginSubTabItem("Normalmap")) {
     if (uiContext.tabSwitchEvent()) {
       uiContext.imageContext.updateImage(
-          0,
-          cfg.processingArea > 0 && fwg.terrainData.sobelData.size() ==
-                                        static_cast<size_t>(cfg.processingArea)
-              ? Fwg::Gfx::displaySobelMap(fwg.terrainData.sobelData,
-                                          cfg.visualizationContext())
-              : Fwg::Gfx::Image());
+          0, fwg.hasShadingData(cfg)
+                 ? Fwg::Gfx::displaySobelMap(fwg.terrainData.sobelData,
+                                             cfg.visualizationContext())
+                 : Fwg::Gfx::Image());
       uiContext.imageContext.updateImage(
-          1,
-          cfg.processingArea > 0 && fwg.terrainData.detailedHeightMap.size() ==
-                                        static_cast<size_t>(cfg.processingArea)
-              ? Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap,
-                                           cfg.visualizationContext())
-              : Fwg::Gfx::Image());
+          1, fwg.hasHeightmapData(cfg)
+                 ? Fwg::Gfx::displayHeightMap(fwg.terrainData.detailedHeightMap,
+                                              cfg.visualizationContext())
+                 : Fwg::Gfx::Image());
     }
     uiContext.helpContext.showHelpTextBox("Normalmap");
 
@@ -1156,13 +1161,13 @@ int showNormalMapTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg,
     {
       UI::Elements::GridLayout grid(2, uiContext.scaled(200.0f),
                                     uiContext.scaled(12.0f));
-      grid.AddInputDouble("Sobel Factor", &cfg.terrainConfig.sobelFactor, 0.01,
-                          10.0);
+      grid.AddInputFloat("Sobel Factor", &cfg.terrainConfig.sobelFactor, 0.01f,
+                         10.0f);
     }
 
     ImGui::Spacing();
-    auto guard = UI::PrerequisiteChecker::require(
-        {UI::PrerequisiteChecker::heightmap(fwg.terrainData)});
+    UI::PrerequisiteGuard guard{
+        Fwg::PrerequisiteChecker::canGenerateSobelMap(fwg, cfg)};
 
     if (guard.ready()) {
       if (UI::Elements::ImportantStepButton("Generate Normalmap",

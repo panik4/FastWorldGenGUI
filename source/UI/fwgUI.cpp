@@ -69,7 +69,8 @@ void FwgUI::logWrapper() {
 void FwgUI::imageWrapper(ImGuiIO &io) {
   static ImVec2 cursorPos;
 
-  float modif = 1.0 - (uiContext.imageContext.isSecondaryTextureActive()) * 0.5;
+  float modif =
+      1.0f - (uiContext.imageContext.isSecondaryTextureActive()) * 0.5f;
   if (uiContext.imageContext.hasTextureDimensions()) {
     auto scale = std::min<float>((ImGui::GetContentRegionAvail().y) * modif /
                                      uiContext.imageContext.textureHeight,
@@ -99,7 +100,8 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
                         ImGuiWindowFlags_HorizontalScrollbar |
                             ImGuiWindowFlags_AlwaysVerticalScrollbar);
       if (uiContext.imageContext.isPrimaryTextureActive()) {
-        ImGui::Image((void *)uiContext.imageContext.primaryTexture,
+        ImGui::Image(ImTextureRef{static_cast<ImTextureID>(
+                         uiContext.imageContext.primaryTexture)},
                      ImVec2(texWidth * uiContext.imageContext.zoom,
                             texHeight * uiContext.imageContext.zoom));
 
@@ -157,9 +159,10 @@ void FwgUI::imageWrapper(ImGuiIO &io) {
                           ImGuiWindowFlags_HorizontalScrollbar |
                               ImGuiWindowFlags_AlwaysVerticalScrollbar);
         ImGui::Image(
-            (void *)uiContext.imageContext.secondaryTexture,
-            ImVec2(uiContext.imageContext.textureWidth * scale * 0.98,
-                   uiContext.imageContext.textureHeight * scale * 0.98));
+            ImTextureRef{static_cast<ImTextureID>(
+                uiContext.imageContext.secondaryTexture)},
+            ImVec2(uiContext.imageContext.textureWidth * scale * 0.98f,
+                   uiContext.imageContext.textureHeight * scale * 0.98f));
         ImGui::EndChild();
       }
     }
@@ -212,7 +215,7 @@ void FwgUI::init(Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       Fwg::Cfg::Values().resourcePath);
   fwg.configure(cfg);
   Fwg::UI::Heightmap::loadHeightmapConfigs(uiContext);
-  initAllowedInput(cfg, fwg.climateData, cfg.terrainConfig.landformDefinitions);
+  initAllowedInput(cfg, cfg.terrainConfig.landformDefinitions);
 }
 
 void FwgUI::defaultTabs(Fwg::Cfg &cfg, FastWorldGenerator &fwg) {
@@ -477,7 +480,7 @@ int FwgUI::runLoop(ImGuiIO &io) {
 }
 
 void FwgUI::initAllowedInput(
-    Fwg::Cfg &cfg, Fwg::Climate::ClimateData &climateData,
+    Fwg::Cfg &cfg,
     std::vector<Terrain::LandformDefinition> &landformDefinitions) {
   Fwg::Utils::Logging::logLine("Initialising allowed input");
   auto &climateClassDefinitions = cfg.climateConfig.climateClassDefinitions;
@@ -494,14 +497,32 @@ void FwgUI::initAllowedInput(
   }
 }
 
-int FwgUI::showFwgConfigure(Fwg::Cfg &cfg) {
+int FwgUI::showFwgConfigure(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   if (UI::Elements::BeginSubTabItem("Fwg config")) {
     // remove the images, and set pretext for them to be auto loaded after
     // switching tabs again
     uiContext.tabSwitchEvent();
     PushItemWidthScaled(200.0f);
-    ImGui::InputInt("Width", &cfg.width);
-    ImGui::InputInt("Height", &cfg.height);
+    if (appliedWidth != cfg.width || appliedHeight != cfg.height) {
+      requestedWidth = cfg.width;
+      requestedHeight = cfg.height;
+      appliedWidth = cfg.width;
+      appliedHeight = cfg.height;
+    }
+    ImGui::InputInt("Width", &requestedWidth);
+    ImGui::InputInt("Height", &requestedHeight);
+    ImGui::BeginDisabled(uiContext.asyncContext.busy());
+    if (ImGui::Button("Apply resolution")) {
+      if (fwg.changeResolution(cfg, requestedWidth, requestedHeight)) {
+        appliedWidth = cfg.width;
+        appliedHeight = cfg.height;
+        uiContext.imageContext.resetTexture();
+      } else {
+        requestedWidth = cfg.width;
+        requestedHeight = cfg.height;
+      }
+    }
+    ImGui::EndDisabled();
     ImGui::PopItemWidth();
     ImGui::EndTabItem();
   }
@@ -526,6 +547,9 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
   ImGui::SameLine();
   if (cfg.debugLevel > 5 && ImGui::Button("Clear")) {
     fwg.resetData();
+    uiContext.imageContext.updateImage(0, Gfx::Image{});
+    uiContext.imageContext.updateImage(1, Gfx::Image{});
+    uiContext.imageContext.resetTexture();
     Fwg::Utils::Logging::logLine(fwg.size());
   }
   if (ImGui::Button(("Save current image to " + cfg.mapsPath).c_str())) {
@@ -560,7 +584,7 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     auto path = cfg.mapsPath + "fwg.data";
     auto configPath = path + ".config";
     try {
-      fwg.save(path);
+      fwg.save(path, cfg);
       if (fwg.saveConfigurationSnapshot(configPath, cfg)) {
         Fwg::Utils::Logging::logLine("Project and config saved to ", path,
                                      " and ", configPath);
@@ -579,11 +603,11 @@ int FwgUI::showGeneric(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
     auto configPath = path + ".config";
     try {
       if (fwg.loadConfigurationSnapshot(configPath, cfg)) {
-        fwg.load(path);
-        uiContext.generationContext.modifiedAreas = true;
-        initAllowedInput(cfg, fwg.climateData,
-                         cfg.terrainConfig.landformDefinitions);
+        fwg.load(path, cfg);
+        uiContext.generationContext.modifiedAreas = false;
+        initAllowedInput(cfg, cfg.terrainConfig.landformDefinitions);
         uiContext.imageContext.resetTexture();
+        onProjectLoaded();
         Fwg::Utils::Logging::logLine("Project and config loaded from ", path,
                                      " and ", configPath);
       }
@@ -659,8 +683,8 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
         climateMode == ClimateMode::FANTASY) {
       {
         UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
-        grid.AddInputDouble("Base Humidity", &cfg.climateConfig.baseHumidity,
-                            0.0, 100.0);
+        grid.AddInputFloat("Base Humidity", &cfg.climateConfig.baseHumidity,
+                           0.0f, 100.0f);
       }
 
       ImGui::Spacing();
@@ -689,10 +713,8 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
       // Scoped guard - only affects the automation button
       {
-        auto guard = UI::PrerequisiteChecker::require(
-            {UI::PrerequisiteChecker::heightmap(fwg.terrainData),
-             UI::PrerequisiteChecker::landforms(fwg.terrainData),
-             UI::PrerequisiteChecker::landMask(fwg.terrainData)});
+        UI::PrerequisiteGuard guard{
+            Fwg::PrerequisiteChecker::canGenerateWholeClimate(fwg, cfg)};
         if (guard.ready() && UI::Elements::AutomationStepButton(
                                  "Generate whole climate automatically")) {
           uiContext.asyncContext.runAsync([&fwg, &cfg]() {
@@ -706,9 +728,9 @@ int FwgUI::showClimateTabs(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
 
     if (climateMode == ClimateMode::FANTASY) {
       UI::Elements::GridLayout grid(2, scaled(200.0f), scaled(12.0f));
-      grid.AddInputDouble("Fantasy Frequency",
-                          &cfg.climateConfig.fantasyClimateFrequency, 0.0,
-                          10.0);
+      grid.AddInputFloat("Fantasy Frequency",
+                         &cfg.climateConfig.fantasyClimateFrequency, 0.0f,
+                         10.0f);
     }
 
     ImGui::InputFloat("Climate Noise Frequency",
@@ -742,9 +764,8 @@ int FwgUI::showAreasTab(Fwg::Cfg &cfg, Fwg::FastWorldGenerator &fwg) {
       uiContext.imageContext.resetTexture();
     }
     {
-      auto guard = UI::PrerequisiteChecker::require(
-          {UI::PrerequisiteChecker::climate(fwg.climateData),
-           UI::PrerequisiteChecker::landforms(fwg.terrainData)});
+      UI::PrerequisiteGuard guard{
+          Fwg::PrerequisiteChecker::canGenerateAllAreas(fwg, cfg)};
 
       if (guard.ready() && UI::Elements::AutomationStepButton(
                                "Generate all areas automatically")) {

@@ -24,7 +24,7 @@ bool BeginMainTabItem(const std::string &label, const bool highlight = false);
 bool BeginSubTabItem(const std::string &label, const bool highlight = false);
 
 // Stylized button (e.g., red = important)
-static bool Button(const std::string &label, bool emphasize = false,
+inline bool Button(const std::string &label, bool emphasize = false,
                    ImVec2 size = ImVec2(0, 0)) {
   if (emphasize) {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
@@ -44,7 +44,7 @@ static bool Button(const std::string &label, bool emphasize = false,
 }
 
 // Emphasized green button for important confirmation steps
-static bool ImportantStepButton(const std::string &label,
+inline bool ImportantStepButton(const std::string &label,
                                 ImVec2 size = ImVec2(0, 0)) {
   ImGui::PushStyleColor(ImGuiCol_Button,
                         ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green
@@ -58,7 +58,7 @@ static bool ImportantStepButton(const std::string &label,
   ImGui::PopStyleColor(3);
   return clicked;
 }
-static bool HelpButton(const std::string &tooltip = "Extended Help") {
+inline bool HelpButton(const std::string &tooltip = "Extended Help") {
   ImGui::PushStyleColor(ImGuiCol_Button,
                         ImVec4(0.85f, 0.75f, 0.2f, 0.9f)); // Soft yellow
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
@@ -82,7 +82,7 @@ static bool HelpButton(const std::string &tooltip = "Extended Help") {
 
   return pressed;
 }
-static bool AutomationStepButton(const std::string &label,
+inline bool AutomationStepButton(const std::string &label,
                                  const ImVec2 &size = ImVec2(0, 0)) {
   // Push blue-ish theme colors
   ImGui::PushStyleColor(ImGuiCol_Button,
@@ -107,7 +107,7 @@ static bool AutomationStepButton(const std::string &label,
   return pressed;
 }
 
-static bool LabeledInputInt(const std::string &label, int &value, int step = 1,
+inline bool LabeledInputInt(const std::string &label, int &value, int step = 1,
                             int stepFast = 10, int min = INT_MIN,
                             int max = INT_MAX) {
   bool changed = false;
@@ -154,7 +154,7 @@ static bool LabeledInputInt(const std::string &label, int &value, int step = 1,
   return changed;
 }
 
-static bool LabeledInputFloat(const std::string &label, float &value,
+inline bool LabeledInputFloat(const std::string &label, float &value,
                               float step = 0.1f, float stepFast = 1.0f,
                               float min = -FLT_MAX, float max = FLT_MAX) {
   bool changed = false;
@@ -179,7 +179,7 @@ static bool LabeledInputFloat(const std::string &label, float &value,
   return changed;
 }
 
-static bool LabeledInputDouble(const std::string &label, double &value,
+inline bool LabeledInputDouble(const std::string &label, double &value,
                                double step = 0.1, double stepFast = 1.0,
                                double min = -DBL_MAX, double max = DBL_MAX) {
   bool changed = false;
@@ -205,7 +205,7 @@ static bool LabeledInputDouble(const std::string &label, double &value,
 }
 
 // Optional tooltip display
-static void HelpMarker(const char *desc) {
+inline void HelpMarker(const char *desc) {
   ImGui::TextDisabled("(?)");
   if (ImGui::IsItemHovered()) {
     ImGui::BeginTooltip();

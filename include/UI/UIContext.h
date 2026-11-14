@@ -189,7 +189,7 @@ struct HelpContext {
     }
   }
 
-  void showHelpTextBox(const std::string &key, bool switchkey = true) {
+  void showHelpTextBox(const std::string &key) {
     ImGui::BeginChild("Help Box",
                       ImVec2(ImGui::GetContentRegionAvail().x,
                              ImGui::GetContentRegionAvail().y * 0.1f),
